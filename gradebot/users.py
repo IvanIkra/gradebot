@@ -18,7 +18,7 @@ from .layout import label
 from .notices import explain
 from .profile import ProfileError
 from .rich import Doc, Html, b, code, join, link
-from .sheets import SheetError, course
+from .sheets import GOOGLE_SHEET, SheetError, course
 from .sheets import name as sheet_name
 
 COMPLAINTS_EVERY = dt.timedelta(days=1)     # one complaint about a sheet's layout a day from a user
@@ -37,6 +37,8 @@ def group_buttons(doc: Doc, groups: list[dict], kind: str, lang: str, none: bool
 class UserCommands:
     async def user_command(self, chat: int, user: dict, cmd: str, arg: str) -> None:
         lang = user["lang"]
+        if not cmd and GOOGLE_SHEET.match(arg):  # a link pasted alone: follow it
+            cmd = "/sheet"
         handlers = {"/grades": self.cmd_grades, "/name": self.cmd_name, "/sheet": self.cmd_sheet,
                     "/sheets": self.cmd_sheets, "/group": self.cmd_group, "/quiet": self.cmd_quiet,
                     "/lang": self.cmd_lang, "/stop": self.cmd_stop}
@@ -312,7 +314,7 @@ class UserCommands:
         await self.api.send(chat, self.sheets_view(user))
 
     def sheet_problem(self, sheet: dict, lang: str) -> str:
-        """Why a followed sheet gives no grades now, or ''."""
+        """What is wrong with a followed sheet now, or ''."""
         if sheet["error"]:
             return explain(sheet["error"], lang)
         if sheet["user_error"]:
@@ -434,7 +436,7 @@ class UserCommands:
         doc = Doc().p(tr(lang, "Quiet hours: ", "Тихие часы: "), b(hours or tr(lang, "off", "выключены")), ". ",
                       tr(lang, "Grades then come at once, but without a sound.",
                          "В это время оценки приходят сразу, но без звука."))
-        doc.p(tr(lang, "Other hours: send them, like ", "Другие часы — пришли их, например "), code("22-7"))
+        doc.p(tr(lang, "Other hours: send them, like ", "Другие часы — пришли их, например "), code("22-7"), ".")
         default = "{}-{}".format(*profile.QUIET_DEFAULT)
         buttons = [(f"{profile.QUIET_DEFAULT[0]}:00–{profile.QUIET_DEFAULT[1]}:00", f"qt:{default}")] \
             if hours != "{}:00–{}:00".format(*profile.QUIET_DEFAULT) else []

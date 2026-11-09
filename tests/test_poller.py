@@ -113,10 +113,12 @@ async def test_errors_of_a_user_and_of_a_sheet(google, poller, two, bot, api, ac
     poller.request(two, 3)
     [read] = await poller.poll(full=False)
     assert {u.tg_id: u.error for u in read.users} == {1: "ambiguous: ДЗ-1А", 2: None, 3: "no_row"}
-    assert "ФИО подходит к нескольким строкам на вкладках: ДЗ-1А" in api.last(1)["text"]
+    told = api.last(1)["text"]  # the other tab is read all the same
+    assert "подключена: вкладок 1, оценок 1; ФИО подходит к нескольким строкам на вкладках: ДЗ-1А" in told
     assert "твоей строки нет ни на одной вкладке" in api.last(3)["text"]
     row = sheets.db.execute("select error, baseline_at from subscriptions where tg_id = 1").fetchone()
-    assert (row["error"], row["baseline_at"]) == ("ambiguous: ДЗ-1А", None)
+    assert row["error"] == "ambiguous: ДЗ-1А" and row["baseline_at"] is not None
+    assert [i["label"] for i in bot.grades.items(1, two)] == ["Quiz 1"]
 
     google["data"] = b"<html>sign in</html>"
     poller.request(two, 2)
@@ -158,7 +160,7 @@ async def test_a_failing_sheet_is_not_told_to_whom_the_bot_must_not_write(google
     clock.advance(hours=13)
     await poller.poll()
     assert sorted(m["chat_id"] for m in api.sent()[sent:]) == [1, OWNER]
-    assert "попробую при следующем чтении" in api.last(1)["text"]
+    assert "не найдена: возможно, её удалили" in api.last(1)["text"]
 
 
 async def test_a_failed_layout_records_nothing_until_the_next_poll(google, poller, two, bot, llm, sheets):

@@ -10,7 +10,7 @@ import logging
 from collections.abc import Callable
 
 from . import clock
-from .access import CODE_LENGTH, Access, NewUser, normalise
+from .access import ALPHABET, CODE_LENGTH, Access, NewUser, normalise
 from .dialog import Dialogs
 from .grades import Grades
 from .groups import Groups
@@ -30,6 +30,8 @@ log = logging.getLogger(__name__)
 ACCESS_CHECK = 600                      # seconds between looks at whose access ends
 ACCESS_WARN = dt.timedelta(days=1)      # a user hears this long before their access ends
 PROLONG = (7, 30, 90)                   # days the owner's buttons add
+NAME_REMINDER = dt.timedelta(days=1)    # a user who came in and set no full name hears of it once after this
+REMINDED = "remind.name"    # kv: the users told that their full name is missing
 OWNER_LANG = "owner.lang"   # kv: the language of the owner's last message, for what the bot tells them unasked
 
 
@@ -110,14 +112,32 @@ class Bot(OwnerCommands, UserCommands, ReadNotices, Dialogs):
             (tr(lang, "Ask to prolong", "Попросить продлить"), "pr", "primary"))
 
     async def watch_access(self) -> None:
-        """Every few minutes: tell the users whose access ends within a day, or has ended. The owner hears only
-        when a user asks to prolong it; /status and /users show the rest."""
+        """Every few minutes: tell the users whose access ends within a day, or has ended, and remind the ones who
+        never set their full name. The owner hears only when a user asks to prolong it; /status and /users show the
+        rest."""
         while True:
             try:
                 await self.check_access()
+                await self.remind_names()
             except Exception:
                 log.exception("checking access failed")
             await asyncio.sleep(ACCESS_CHECK)
+
+    async def remind_names(self) -> None:
+        """Once, a day after coming in: without a full name no row is looked for, and nothing ever comes."""
+        told = set(self.store.get_json(REMINDED, []))
+        since = clock.utc_iso(self.now() - NAME_REMINDER)
+        for user in self.access.users():
+            if user["student"] or user["tg_id"] in told or user["joined_at"] > since or user["paused"] \
+                    or self.access.expired(user):
+                continue
+            told.add(user["tg_id"])
+            self.store.put_json(REMINDED, sorted(told))
+            lang = user["lang"]
+            await self.tell(user, Doc().p(
+                tr(lang, "I can't find your grades yet: I need your full name exactly as the sheets have it. ",
+                   "Я пока не могу найти твои оценки: нужно ФИО — точно так, как в таблицах. "),
+                code(tr(lang, "/name Surname Name", "/name Фамилия Имя"))))
 
     async def check_access(self) -> None:
         near, ended = self.access.ending(ACCESS_WARN)
@@ -183,7 +203,7 @@ class Bot(OwnerCommands, UserCommands, ReadNotices, Dialogs):
         if user is not None:
             if (full_name(sender), sender.get("username")) != (user["tg_name"], user["username"]) or user["paused"]:
                 self.access.update_profile(sender["id"], full_name(sender), sender.get("username"))
-            if self.access.expired(user):
+            if self.access.expired(user) and cmd != "/stop":  # leaving works after the end too
                 await self.api.send(chat, self.ended(user["lang"]))
                 return
             if cmd:
@@ -209,7 +229,7 @@ class Bot(OwnerCommands, UserCommands, ReadNotices, Dialogs):
             elif (user := self.access.user(sender["id"])) is not None:
                 if kind == "pr":
                     note = await self.ask_prolong(user)
-                elif self.access.expired(user):
+                elif self.access.expired(user) and kind not in ("stop", "stop!"):
                     note = tr(user["lang"], "Your access has ended", "Доступ закончился")
                 else:
                     note = await self.user_callback(chat, message_id, user, kind, arg)
@@ -223,7 +243,8 @@ class Bot(OwnerCommands, UserCommands, ReadNotices, Dialogs):
         if self.access.locked(tg_id):
             return
         lang = guess(sender.get("language_code"))
-        pasted = not cmd and len(normalise(arg)) == CODE_LENGTH
+        raw = normalise(arg)
+        pasted = not cmd and len(raw) == CODE_LENGTH and set(raw) <= set(ALPHABET)  # «привет» is no code
         candidate = arg if cmd == "/start" or pasted else ""
         if candidate:
             new = NewUser(tg_id, full_name(sender), sender.get("username"), lang)
@@ -246,8 +267,17 @@ class Bot(OwnerCommands, UserCommands, ReadNotices, Dialogs):
                 return
             if self.access.locked(tg_id):
                 return
-        await self.api.send(chat, tr(lang, "You need an invite code to use this bot.",
-                                     "Чтобы пользоваться ботом, нужен код приглашения."))
+            await self.api.send(chat, tr(
+                lang, "This code doesn't work: it is wrong, used up, expired or revoked. Check it, or ask for a new "
+                      "one.",
+                "Этот код не подходит: он неверный, уже использован, истёк или отозван. Проверь его или попроси "
+                "новый."))
+            return
+        await self.api.send(chat, Doc().p(tr(
+            lang, "I send new grades from the Google Sheets of your courses as soon as they appear.",
+            "Я присылаю новые оценки из таблиц Google твоих курсов, как только они появляются.")).p(tr(
+            lang, "Access is by invite code: send me the code you got, or open the invite link.",
+            "Вход по коду приглашения: пришли код, который тебе дали, или открой ссылку-приглашение.")))
 
     def welcome(self, lang: str, group: dict | None, followed: int, expires: str | None = None) -> Doc:
         """The first message: the user's group, or a choice of one when the code carried none, and the full name."""

@@ -20,7 +20,7 @@ def test_command():
 
 async def test_stranger_needs_a_code(bot, api):
     await bot.handle(message(PETR, "привет"))
-    assert "нужен код приглашения" in api.last(PETR)["text"]
+    assert "Вход по коду приглашения" in api.last(PETR)["text"]
     await bot.handle(message(ANNA, "/start", lang="en"))
     assert "invite code" in api.last(ANNA)["text"]
     await bot.handle(message(PETR, "/start", chat_type="group"))
@@ -40,7 +40,7 @@ async def test_invite_and_come_in(bot, api, access):
     assert buttons(note) == {"Удалить": f"du:{PETR}"}
 
     await bot.handle(message(ANNA, f"/start {code}"))
-    assert access.user(ANNA) is None and "нужен код" in api.last(ANNA)["text"]
+    assert access.user(ANNA) is None and "Этот код не подходит" in api.last(ANNA)["text"]
 
 
 async def test_pasted_code_works(bot, api, access):
@@ -98,7 +98,7 @@ async def test_owner_deletes_a_user(bot, api, access):
     assert "закрыл тебе доступ" in api.last(PETR)["text"]
     assert "Пользователей пока нет" in api.last(OWNER)["text"]
     await bot.handle(message(PETR, "/help"))
-    assert "нужен код" in api.last(PETR)["text"]
+    assert "Вход по коду приглашения" in api.last(PETR)["text"]
 
 
 async def test_deleting_a_user_who_blocked_the_bot(bot, api, access):

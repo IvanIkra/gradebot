@@ -83,7 +83,7 @@ create table if not exists subscriptions (
     added_at text not null,
     baseline_at text,               -- the first read for this user: it records no new grades; null until then
     read_at text,                   -- the last read of the user's rows, good or not
-    error text,                     -- no_row, ambiguous: the user's rows could not be told; null when fine
+    error text,                     -- no_row, or ambiguous: tabs with the name in two rows; null when fine
     tabs integer not null default 0,  -- tabs with the user's row at the last read
     primary key (tg_id, sheet)
 );

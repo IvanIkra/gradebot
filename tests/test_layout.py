@@ -8,7 +8,7 @@ from .books import workbook as book
 def quizzes(student=IVAN, **kwargs):
     parsed = workbook.load(book(**kwargs))
     tab = next(t for t in parsed if t.title == "Квизы")
-    return tab, [r for r in workbook.find(parsed, student) if r.tab is tab]
+    return tab, [r for r in workbook.find(parsed, student)[0] if r.tab is tab]
 
 
 async def test_one_layout_for_every_follower(layouts, llm):

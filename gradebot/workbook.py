@@ -1,9 +1,10 @@
 """A downloaded grade sheet: its visible tabs, and in them the rows of the students who follow it.
 
 The workbook is parsed once per read, then searched for every follower's full name. A name is compared without case,
-"ё" and punctuation, and matches the start of a cell: "Иванов Иван" finds "ИВАНОВ Иван Сергеевич". A name that
-matches two rows of one tab is an error, not the first row: two namesakes in a group are told apart by a longer
-name.
+"ё" and punctuation, and matches the start of a cell: "Иванов Иван" finds "ИВАНОВ Иван Сергеевич". A row with
+nothing but the name is no match when another row has more: teachers keep blank copies of the list below the real
+one. A name that still matches two rows of one tab leaves that tab out, not the first row: two namesakes in a group
+are told apart by a longer name.
 
 Of every tab the top rows are kept (TOP_ROWS, whoever reads it): the header is somewhere among them, and the layout
 is cached by the text of the header rows (layout.py), so it must not depend on whose row is asked about.
@@ -19,14 +20,6 @@ TOP_ROWS = 15               # the first rows of a tab the model sees: the header
 
 class NotWorkbook(ValueError):
     """A sheet closed to the link gives a login page instead of an xlsx."""
-
-
-class Ambiguous(ValueError):
-    """The name matches more than one row of a tab."""
-
-    def __init__(self, tabs: list[str]):
-        super().__init__(f"the name matches several rows in: {', '.join(tabs)}")
-        self.tabs = tabs
 
 
 def norm(text: str) -> str:
@@ -112,19 +105,17 @@ def load(data: bytes) -> list[Tab]:
     return tabs
 
 
-def find(tabs: list[Tab], student: str) -> list[Row]:
-    """The student's row in every tab that has it. Ambiguous when a tab has the name in more than one row."""
+def find(tabs: list[Tab], student: str) -> tuple[list[Row], list[str]]:
+    """(the student's row in every tab that has one, the tabs where the name is in more than one row with data)."""
     target = norm(student).split()
     rows, twice = [], []
     for tab in tabs:
-        found = [(i, j) for i, r in enumerate(tab.cells)
+        found = [Row(tab, i + 1, column(j), {column(k): c for k, c in enumerate(r) if k != j and text(c)})
+                 for i, r in enumerate(tab.cells)
                  if (j := next((j for j, c in enumerate(r) if matches(c, target)), None)) is not None]
-        if len(found) > 1:
+        filled = [row for row in found if row.cells] or found[:1]  # a blank copy of the list is no match
+        if len(filled) > 1:
             twice.append(tab.title)
-        elif found:
-            i, j = found[0]
-            rows.append(Row(tab, i + 1, column(j), {column(k): c for k, c in enumerate(tab.cells[i])
-                                                    if k != j and text(c)}))
-    if twice:
-        raise Ambiguous(twice)
-    return rows
+        elif filled:
+            rows.append(filled[0])
+    return rows, twice

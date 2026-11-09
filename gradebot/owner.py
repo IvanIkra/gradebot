@@ -680,9 +680,9 @@ class OwnerCommands:
 
     @staticmethod
     def no_course(lang: str) -> str:
-        return tr(lang, "Without a short name the bot names a sheet by its title in Google, and its hashtag is the "
-                        "first 8 characters of the title.",
-                  "Без короткого имени бот называет таблицу её названием в Google, а хэштег — первые 8 символов "
+        return tr(lang, "Without a short name the bot names a sheet by its title in Google, and its hashtag comes "
+                        "from the first words of the title.",
+                  "Без короткого имени бот называет таблицу её названием в Google, а хэштег берёт из первых слов "
                   "названия.")
 
     async def cmd_relayout(self, chat: int, arg: str, lang: str) -> None:
@@ -769,7 +769,8 @@ class OwnerCommands:
         doc.h(tr(lang, "Users", "Пользователи") + f" · {len(users)}").table([], [
             [tr(lang, "without a full name", "без ФИО"), str(sum(not u["student"] for u in users))],
             [tr(lang, "blocked the bot", "заблокировали бота"), str(sum(bool(u["paused"]) for u in users))],
-            [tr(lang, "subscriptions with no row found", "подписок без найденной строки"), str(rows["bad_rows"])],
+            [tr(lang, "subscriptions with a problem in the rows", "подписок с проблемой в строках"),
+             str(rows["bad_rows"])],
             [tr(lang, "sheets waiting for approval", "таблиц ждут одобрения"), str(len(self.sheets.requests()))],
             [tr(lang, "access ends within 3 days", "доступ кончается в ближайшие 3 дня"),
              str(sum(bool(u["expires_at"]) and not self.access.expired(u)

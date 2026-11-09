@@ -29,6 +29,9 @@ def explain(error: str, lang: str) -> str:
     what, _, detail = error.partition(": ")
     if what == poller.CLOSED:
         return tr(lang, "closed: open it to anyone with the link", "закрыта: открой её всем, у кого есть ссылка")
+    if what == poller.DOWNLOAD and " 404 " in f" {detail} ":
+        return tr(lang, "not found: it may have been deleted, or the link is wrong",
+                  "не найдена: возможно, её удалили или ссылка неверна")
     if what == poller.DOWNLOAD:
         return tr(lang, f"cannot be downloaded ({detail}), I'll try again at the next read",
                   f"не скачивается ({detail}), попробую при следующем чтении")
@@ -42,8 +45,10 @@ def explain(error: str, lang: str) -> str:
         return tr(lang, "your row is on no tab: check your full name, /name",
                   "твоей строки нет ни на одной вкладке: проверь ФИО, /name")
     if what == poller.AMBIGUOUS:
-        return tr(lang, f"your full name matches several rows in: {detail}. Make it longer, with the patronymic",
-                  f"ФИО подходит к нескольким строкам на вкладках: {detail}. Уточни его, например с отчеством")
+        return tr(lang, f"your full name matches several rows in: {detail}, so these tabs are skipped. Make it "
+                        "longer, with the patronymic",
+                  f"ФИО подходит к нескольким строкам на вкладках: {detail}, их я пропускаю. Уточни ФИО, например "
+                  "с отчеством")
     return error
 
 
@@ -52,11 +57,12 @@ def outcome(read: SheetRead, user: UserRead | None, lang: str) -> str:
         return explain(read.error, lang)
     if user is None:
         return tr(lang, "read", "прочитана")
-    if user.error is not None:
-        return explain(user.error, lang)
+    if not user.tabs:
+        return explain(user.error or poller.NO_ROW, lang)
     done = tr(lang, "connected", "подключена") if user.first else tr(lang, "read", "прочитана")
-    return tr(lang, f"{done}: tabs {user.tabs}, grades {user.items}",
+    text = tr(lang, f"{done}: tabs {user.tabs}, grades {user.items}",
               f"{done}: вкладок {user.tabs}, оценок {user.items}")
+    return f"{text}; {explain(user.error, lang)}" if user.error else text
 
 
 class ReadNotices:
@@ -74,7 +80,7 @@ class ReadNotices:
                 lang = user["lang"]
                 doc = Doc().h(tr(lang, "Sheets", "Таблицы")).table(
                     [], [[sheet_name(read.sheet), outcome(read, one, lang)] for read, one in lines])
-                if any(one is not None and one.first and one.error is None for _, one in lines):
+                if any(one is not None and one.first and one.tabs for _, one in lines):
                     doc.p(tr(lang, "New and changed grades will come here.",
                              "Новые и изменённые оценки будут приходить сюда."))
                 await self.tell(user, doc)

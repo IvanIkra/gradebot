@@ -26,9 +26,9 @@ class Grades:
     def __init__(self, store: Store, now: Callable[[], dt.datetime] = clock.now_utc):
         self.db, self.now = store.db, now
 
-    def record(self, tg_id: int, sheet: int, items: list[Item], tabs: int) -> bool:
+    def record(self, tg_id: int, sheet: int, items: list[Item], tabs: int, error: str | None = None) -> bool:
         """Store a user's grades in a sheet and the new ones among them; True for the baseline (the first read).
-        The subscription must exist."""
+        `error`: what is wrong with the rest (tabs left out), shown to the user. The subscription must exist."""
         db = self.db
         sub = db.execute("select baseline_at from subscriptions where tg_id = ? and sheet = ?",
                          (tg_id, sheet)).fetchone()
@@ -73,8 +73,8 @@ class Grades:
                            [(tg_id, sheet, key) for key in moved])
             db.executemany("update grade_items set gone = 1 where tg_id = ? and sheet = ? and key = ?",
                            [(tg_id, sheet, key) for key in set(prev) - seen - moved])
-            db.execute("update subscriptions set baseline_at = coalesce(baseline_at, ?), read_at = ?, error = null, "
-                       "tabs = ? where tg_id = ? and sheet = ?", (now, now, tabs, tg_id, sheet))
+            db.execute("update subscriptions set baseline_at = coalesce(baseline_at, ?), read_at = ?, error = ?, "
+                       "tabs = ? where tg_id = ? and sheet = ?", (now, now, error, tabs, tg_id, sheet))
         return first
 
     def failed(self, tg_id: int, sheet: int, error: str) -> None:

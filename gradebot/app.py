@@ -43,6 +43,19 @@ OWNER_COMMANDS = {
 }
 
 
+# What a stranger sees in the empty chat before /start (at most 512 characters), and on the bot's profile (120).
+DESCRIPTION = {
+    "en": "I watch the Google Sheets of your courses and send you every new or changed grade as soon as it appears.\n\n"
+          "Access is by invite code: send me the code you got, or open the invite link.",
+    "ru": "Слежу за таблицами Google с оценками твоих курсов и присылаю каждую новую или изменённую оценку, как только "
+          "она появится.\n\nВход по коду приглашения: пришли код, который тебе дали, или открой ссылку-приглашение.",
+}
+SHORT_DESCRIPTION = {
+    "en": "New grades from the Google Sheets of your courses, right in Telegram.",
+    "ru": "Новые оценки из таблиц Google твоих курсов — сразу в Telegram.",
+}
+
+
 class Service:
     def __init__(self, env: Env, data: Path):
         data.mkdir(parents=True, exist_ok=True)
@@ -64,6 +77,7 @@ class Service:
             bot.poller, bot.budget = poller, self.budget
             poller.on_read, self.budget.notify = bot.after_read, bot.budget_notice
             await self.set_commands(api)
+            await self.set_profile(api)
             await asyncio.gather(poll(api, bot, self.store), poller.run(), bot.watch_access())
 
     async def set_commands(self, api: BotApi) -> None:
@@ -74,6 +88,17 @@ class Service:
                 await api.set_commands(OWNER_COMMANDS[lang], chat_id=self.env.owner_id, lang=code)
             except TelegramError as e:  # the owner has not opened the bot yet
                 log.warning("owner's commands not set: %s", e)
+
+
+    async def set_profile(self, api: BotApi) -> None:
+        """The description a stranger reads before pressing Start: set on every start, so it follows the code."""
+        for lang in ("en", "ru"):
+            code = "" if lang == "en" else lang
+            try:
+                await api.call("setMyDescription", description=DESCRIPTION[lang], language_code=code)
+                await api.call("setMyShortDescription", short_description=SHORT_DESCRIPTION[lang], language_code=code)
+            except TelegramError as e:
+                log.warning("the bot's description not set: %s", e)
 
 
 async def poll(api: BotApi, bot: Bot, store: Store, once: bool = False) -> None:

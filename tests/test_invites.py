@@ -44,7 +44,7 @@ async def test_a_code_for_two(bot, api, access):
     await bot.handle(message(ANNA, f"/start {code}", first="Анна"))
     assert access.user(ANNA) is not None and access.open_invites() == []
     await bot.handle(message(IRA, f"/start {code}", first="Ира"))
-    assert access.user(IRA) is None and "нужен код" in api.last(IRA)["text"]
+    assert access.user(IRA) is None and "Этот код не подходит" in api.last(IRA)["text"]
 
 
 def test_a_code_for_anyone_until_revoked(access, clock):
@@ -138,3 +138,13 @@ def test_codes_used_before_count_as_used(tmp_path):
     store = Store(path)
     assert tuple(store.db.execute("select uses, used from invites").fetchone()) == (1, 1)
     store.close()
+
+
+async def test_leaving_works_after_the_access_ended(bot, api, access, clock):
+    await bot.handle(message(OWNER, "/invite +1д"))
+    await bot.handle(message(PETR, f"/start {invite_code(api.last(OWNER)['text'])}"))
+    clock.advance(days=2)
+    await bot.handle(message(PETR, "/stop"))
+    assert buttons(api.last(PETR))["Да, удалить"] == "stop!"
+    await bot.handle(callback(PETR, "stop!"))
+    assert access.user(PETR) is None and "Твои данные удалены" in api.last(PETR)["text"]

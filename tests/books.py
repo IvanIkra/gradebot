@@ -10,7 +10,8 @@ URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/edit#gid=0"
 
 
 def workbook(hw: float = 5.9, quiz: float = 8, her_hw: float = 7, her_quiz: float = 9, inserted: bool = False,
-             total: str = "Балл", hidden_tab: bool = True, namesake: bool = False, classmate: float = 10) -> bytes:
+             total: str = "Балл", hidden_tab: bool = True, namesake: bool = False, classmate: float = 10,
+             blank_copy: bool = False) -> bytes:
     wb = Workbook()
     # Max points in row 1, per-problem points, a total and a bonus column.
     ws = wb.active
@@ -22,6 +23,11 @@ def workbook(hw: float = 5.9, quiz: float = 8, her_hw: float = 7, her_quiz: floa
     ws.append([101, "ИВАНОВ Иван Сергеевич", None, 1, 0.7, hw, 1])
     if namesake:
         ws.append([102, "Иванов Иван Сергеевич", None, 0, 0, 2, 0])
+    if blank_copy:  # the list again far below, with no grades: a template, not a namesake
+        for _ in range(30):
+            ws.append([])
+        ws.append([None, "Петрова Анна Олеговна"])
+        ws.append([None, "ИВАНОВ Иван Сергеевич"])
     # A two-row header with a grade after each quiz; `inserted` puts a column before them.
     ws = wb.create_sheet("Квизы")
     extra = [None] if inserted else []

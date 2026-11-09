@@ -1,7 +1,7 @@
 import pytest
 
 from gradebot.access import NewUser
-from gradebot.sheets import SHEETS_PER_USER, SheetError, name, parse_url
+from gradebot.sheets import SHEETS_PER_USER, SheetError, course_of, name, parse_url
 
 CALC = "https://docs.google.com/spreadsheets/d/1CalcExampleSheetId_0123456789abc/edit#gid=0"
 ALG = "https://docs.google.com/spreadsheets/u/1/d/1AlgebraExampleSheetId-0123456789/edit"
@@ -70,3 +70,15 @@ def test_deleting_a_user_drops_their_own_sheets(sheets, users, access, store):
     sheets.drop_orphans()
     assert sheets.get(own["id"]) is None and sheets.get(group["id"]) is not None
     assert sheets.followers(group["id"]) == [ANNA]
+
+
+def test_a_course_from_the_title_takes_whole_words():
+    def of(title: str, course: str = "") -> str:
+        return course_of({"course": course, "title": title, "sheet_id": "1AbCdEfGhIjKlMnOpQrStUvWx"})
+
+    assert of("Ведомость Алгебра ИВТ 101") == "Алгебра"     # no generic words, no group numbers
+    assert of("Физика ФИИТ 105") == "Физика"
+    assert of("ТВ ИВТ 25/26 - Успеваемость") == "ТВ ИВТ"
+    assert of("Дискретная математика") == "Дискретн"        # one long word: its start
+    assert of("Алгебра", course="Алг") == "Алг"             # the owner's wins
+    assert of("") == "1AbCdEfG"

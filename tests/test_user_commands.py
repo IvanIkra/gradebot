@@ -136,4 +136,20 @@ async def test_a_course_for_a_sheet_new_to_the_bot(bot, api, sheets, access, pet
     assert buttons(api.last(OWNER))["Алг"] == f"an:#{sheets.by_url(ALG)['id']}"
     await press(bot, OWNER, f"#{sheets.by_url(ALG)['id']}")
     await press(bot, OWNER)                                     # «Title from Google»
-    assert "Короткого имени нет" in api.last(OWNER)["text"] and "первые 8 символов" in api.last(OWNER)["text"]
+    assert "Короткого имени нет" in api.last(OWNER)["text"] and "из первых слов" in api.last(OWNER)["text"]
+
+
+async def test_a_link_pasted_alone_follows_the_sheet(bot, api, sheets, access, petr):
+    access.set_rank(PETR, TRUSTED)
+    await bot.handle(message(PETR, CALC))
+    await press(bot, PETR)  # no short name
+    assert [s["url"] for s in sheets.followed(PETR)] == [sheets.by_url(CALC)["url"]]
+
+
+async def test_a_user_without_a_full_name_is_reminded_once(bot, api, access, petr, clock):
+    await bot.remind_names()
+    count = len(api.sent(PETR))
+    clock.advance(days=1, minutes=1)
+    await bot.remind_names()
+    await bot.remind_names()
+    assert len(api.sent(PETR)) == count + 1 and "нужно ФИО" in api.last(PETR)["text"]

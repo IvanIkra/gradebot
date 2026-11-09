@@ -18,6 +18,9 @@ from .store import Store
 GOOGLE_SHEET = re.compile(r"^https://docs\.google\.com/spreadsheets/(?:u/\d+/)?d/([A-Za-z0-9_-]{20,80})")
 COURSE_CHARS = 10       # the course in front of a work's label: "Calc HW 3" (23 characters for both)
 COURSE_FROM_TITLE = 8   # characters of the sheet's title that make its course when the owner set none
+# Words of a title that say nothing about the course: "Ведомость Алгебра ИВТ 101" is the course "Алгебра".
+GENERIC_WORDS = frozenset({"ведомость", "успеваемость", "оценки", "журнал", "таблица", "баллы", "рейтинг", "итоги",
+                           "grades", "gradebook", "scores", "marks", "sheet", "results"})
 SHEETS_PER_USER = 20
 STALE_AFTER = dt.timedelta(hours=12)
 # A user whose rows are looked for (`users u`; the parameter is now): a full name, access, not blocked the bot.
@@ -49,8 +52,18 @@ def course(text: str) -> str:
 
 
 def course_of(sheet: dict) -> str:
-    """The course in front of the sheet's works: the owner's, else the start of the title."""
-    return sheet["course"] or (sheet["title"] or sheet["sheet_id"])[:COURSE_FROM_TITLE].strip()
+    """The course in front of the sheet's works: the owner's, else whole words from the title (no group numbers, no
+    "Ведомость") up to COURSE_FROM_TITLE characters, or the start of the first such word."""
+    if sheet["course"]:
+        return sheet["course"]
+    words = [w for w in re.split(r"[^\w/]+", sheet["title"] or "")
+             if re.search(r"[^\W\d_]", w) and w.lower() not in GENERIC_WORDS]
+    out = ""
+    for word in words:
+        if len(f"{out} {word}".strip()) > COURSE_FROM_TITLE:
+            break
+        out = f"{out} {word}".strip()
+    return out or (words[0] if words else sheet["title"] or sheet["sheet_id"])[:COURSE_FROM_TITLE].strip()
 
 
 def name(sheet: dict) -> str:

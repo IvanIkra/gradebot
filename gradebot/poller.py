@@ -9,7 +9,8 @@ went.
 
 A sheet fails as a whole on the download, on a file that is no workbook (a sheet closed to the link gives a login
 page) and on the layout (the network, the limit); its grades stay as they were, and it is read again at the next
-poll. A reader whose row is on no tab, or in two rows of one tab, fails alone. A sheet failing for 12 hours is told
+poll. A reader whose row is on no tab fails alone; a tab with their name in two rows is left out for them, and they
+are told so. A sheet failing for 12 hours is told
 once to the owner and its followers, and once more when it reads again (`SheetRead.stale`, `back`).
 """
 
@@ -61,7 +62,7 @@ def set_interval(store: Store, minutes: int) -> None:
 @dataclass
 class UserRead:
     tg_id: int
-    error: str | None = None    # NO_ROW or AMBIGUOUS with the tabs
+    error: str | None = None    # NO_ROW, or AMBIGUOUS with the tabs left out (the others are read)
     tabs: int = 0               # with the user's row
     items: int = 0              # grades in the sheet now
     first: bool = False         # the baseline was made now
@@ -163,15 +164,13 @@ class Poller:
         for reader in self.sheets.readers(sheet["id"]):
             user = UserRead(reader["tg_id"])
             names[user.tg_id] = reader["student"]
-            try:
-                found = workbook.find(tabs, reader["student"])
-            except workbook.Ambiguous as e:
-                user.error = f"{AMBIGUOUS}: {', '.join(e.tabs)}"
-            else:
-                if found:
-                    rows[user.tg_id] = found
-                else:
-                    user.error = NO_ROW
+            found, twice = workbook.find(tabs, reader["student"])
+            if twice:
+                user.error = f"{AMBIGUOUS}: {', '.join(twice)}"
+            if found:
+                rows[user.tg_id] = found
+            elif not twice:
+                user.error = NO_ROW
             users.append(user)
         budget = layouts.budget(course_of(sheet))
         specs = {}
@@ -193,12 +192,11 @@ class Poller:
         for user in users:
             if self.sheets.reader(user.tg_id, sheet["id"]) != names[user.tg_id]:
                 continue
-            if user.error is None:
-                found = rows[user.tg_id]
+            if found := rows.get(user.tg_id):
                 items = []
                 for row in found:
                     items += layouts.extract(row, specs[row.tab.title], len(items))
-                user.first = self.grades.record(user.tg_id, sheet["id"], items, len(found))
+                user.first = self.grades.record(user.tg_id, sheet["id"], items, len(found), user.error)
                 user.tabs, user.items = len(found), self.grades.count(user.tg_id, sheet["id"])
             else:
                 self.grades.failed(user.tg_id, sheet["id"], user.error)
@@ -224,5 +222,8 @@ async def fetch_title(session: aiohttp.ClientSession, sid: str) -> str | None:
     found = re.search(r"<title>(.*?)</title>", page, re.S)
     if found is None:
         return None
-    title = html.unescape(found[1]).strip().removesuffix(" - Google Диск").removesuffix(" - Google Drive").strip()
+    title = html.unescape(found[1]).strip()
+    for suffix in (" - Google Диск", " - Google Drive", " - Google Таблицы", " - Google Sheets"):
+        title = title.removesuffix(suffix)
+    title = title.strip()
     return title or None
