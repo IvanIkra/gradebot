@@ -22,6 +22,8 @@ from .sheets import GOOGLE_SHEET, SheetError, course
 from .sheets import name as sheet_name
 
 COMPLAINTS_EVERY = dt.timedelta(days=1)     # one complaint about a sheet's layout a day from a user
+FEEDBACK_PER_DAY = 5                        # /feedback messages a day from a user
+FEEDBACK_CHARS = 1000
 
 
 def group_buttons(doc: Doc, groups: list[dict], kind: str, lang: str, none: bool = True) -> Doc:
@@ -41,7 +43,7 @@ class UserCommands:
             cmd = "/sheet"
         handlers = {"/grades": self.cmd_grades, "/name": self.cmd_name, "/sheet": self.cmd_sheet,
                     "/sheets": self.cmd_sheets, "/group": self.cmd_group, "/quiet": self.cmd_quiet,
-                    "/lang": self.cmd_lang, "/stop": self.cmd_stop}
+                    "/lang": self.cmd_lang, "/feedback": self.cmd_feedback, "/stop": self.cmd_stop}
         if cmd in handlers:
             await handlers[cmd](chat, user, arg)
         elif cmd == "/start":
@@ -95,7 +97,7 @@ class UserCommands:
                 lang, "Your data is erased. To come back you'll need a new invite code.",
                 "Твои данные удалены. Чтобы вернуться, нужен новый код приглашения."))
             left = tr(self.owner_lang, "Left the bot with /stop: ", "Выход из бота через /stop: ")
-            await self.tell_owner(Doc().p(left, self.who(user)))
+            await self.news(left, self.who(user))
         elif kind == "stop":
             await self.api.edit(chat, message_id, tr(lang, "Staying, nothing erased.", "Остаёмся, ничего не удалено."))
         return None
@@ -112,6 +114,9 @@ class UserCommands:
                 ["/group", tr(lang, "your group: you follow its shared sheets", "твоя группа: её общие таблицы")],
                 ["/quiet", tr(lang, "quiet hours", "тихие часы")],
                 ["/lang", tr(lang, "language", "язык")],
+                ["/feedback " + tr(lang, "<text>", "<текст>"),
+                 tr(lang, "write to the bot's owner: a question, a bug, an idea", "написать владельцу бота: вопрос, "
+                                                                                    "ошибка, идея")],
                 ["/stop", tr(lang, "erase your data and leave", "удалить свои данные и уйти")]]
         return Doc().h(tr(lang, "Commands", "Команды")).table([], rows).p(asks_hint(lang))
 
@@ -158,9 +163,9 @@ class UserCommands:
         await self.api.send(chat, doc)
         owner = self.owner_lang
         before = [tr(owner, " (was ", " (было "), user["student"], ")"] if user["student"] else []
-        await self.tell_owner(
-            Doc().p(self.who(user), tr(owner, " set the full name ", ": ФИО "), b(student), *before)
-            .buttons((tr(owner, "Reset", "Сбросить"), f"nr:{user['tg_id']}", "danger")))
+        await self.news(self.who(user), tr(owner, " set the full name ", ": ФИО "), b(student), *before,
+                        buttons=((tr(owner, "Reset the name of ", "Сбросить ФИО: ") + user["tg_name"],
+                                  f"nr:{user['tg_id']}", "danger"),))
         self.read_soon(user["tg_id"], [sheet["id"] for sheet in followed])
 
     # --- sheets ----------------------------------------------------------------------------------
@@ -305,7 +310,7 @@ class UserCommands:
             else:
                 news = [tr(owner, " is in the group ", ": теперь в группе "), b(group["name"]),
                         *([tr(owner, " (was ", " (была "), before["name"], ")"] if before else [])]
-            await self.tell_owner(Doc().p(self.who(user), *news))
+            await self.news(self.who(user), *news)
         if user["student"] and followed:
             self.read_soon(user["tg_id"], followed)
         return tr(lang, "Saved", "Сохранено")
@@ -454,6 +459,49 @@ class UserCommands:
     def lang_view(self, lang: str) -> Doc:
         doc = Doc().p(tr(lang, "Language: English.", "Язык: русский."))
         return doc.buttons(("English", "lg:en"), ("Русский", "lg:ru"))
+
+    # --- feedback ---------------------------------------------------------------------------------
+
+    async def cmd_feedback(self, chat: int, user: dict, arg: str) -> None:
+        """`/feedback <text>`, or the text asked for: it goes to the owner, who may answer with a button."""
+        lang = user["lang"]
+
+        def check(value: str, data: dict) -> str:
+            if len(value) > FEEDBACK_CHARS:
+                raise ValueError("too long")
+            return value
+
+        step = Step("text", lambda data: Doc().p(tr(
+                        lang, "What would you like to tell the bot's owner? A question, a bug, an idea: one message.",
+                        "Что передать владельцу бота? Вопрос, ошибка, идея — одним сообщением.")),
+                    check=check, error=lambda lang, e: tr(lang, f"At most {FEEDBACK_CHARS} characters, please.",
+                                                          f"Не больше {FEEDBACK_CHARS} символов, пожалуйста."))
+        await self.flow(chat, lang, [step], lambda data: self.send_feedback(chat, user["tg_id"], data["text"]),
+                        {"text": arg.strip()} if arg.strip() else None)
+
+    async def send_feedback(self, chat: int, tg_id: int, text: str) -> None:
+        user = self.access.user(tg_id)
+        if user is None:
+            return
+        lang, since = user["lang"], self.now() - dt.timedelta(days=1)
+        sent = [moment for moment in self.feedback_sent.get(tg_id, []) if moment > since]
+        if len(sent) >= FEEDBACK_PER_DAY:
+            await self.api.send(chat, tr(lang, "That's enough for today: write again tomorrow.",
+                                         "На сегодня хватит: напиши завтра."))
+            return
+        self.feedback_sent[tg_id] = [*sent, self.now()]
+        owner = self.owner_lang
+        await self.tell_owner(Doc().p(self.who(user), tr(owner, " writes:", " пишет:")).quote(text)
+                              .buttons((tr(owner, "Answer", "Ответить"), f"fa:{tg_id}", "primary")))
+        await self.api.send(chat, tr(lang, "Sent to the owner. The answer will come here.",
+                                     "Отправлено владельцу. Ответ придёт сюда."))
+
+    @property
+    def feedback_sent(self) -> dict[int, list]:
+        """tg_id -> when they wrote with /feedback lately: in memory, a restart forgets it."""
+        if not hasattr(self, "_feedback_sent"):
+            self._feedback_sent = {}
+        return self._feedback_sent
 
     async def cmd_stop(self, chat: int, user: dict, arg: str) -> None:
         lang = user["lang"]

@@ -138,7 +138,7 @@ async def test_a_user_who_blocked_the_bot_is_paused_and_the_owner_told(bot, api,
     del api.fail_chat[IVAN]
     owner = api.last(OWNER)
     assert "бот заблокирован" in owner["text"] or "blocked the bot" in owner["text"]
-    assert buttons(owner)["Delete"] == f"du:{IVAN}"
+    assert f"du:{IVAN}" in buttons(owner).values() and owner["method"] == "sendRichMessage"
     await bot.send_grades()
     assert sheets.to_read() == [] and len(api.sent(IVAN)) == 0  # paused: neither read nor told
     await bot.handle(message(IVAN, "/grades"))                  # back: unpaused, the grades go next time

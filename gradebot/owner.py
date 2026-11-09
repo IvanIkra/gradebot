@@ -1,13 +1,14 @@
 """The owner's commands: invite codes, users, groups and their sheets, sheets' short names and layouts.
 
 Callbacks: `rq:<invite>` asks to revoke a code and `rv:<invite>` revokes it, `codes` and `users` redraw the lists,
+`up:<page>` turns a page of users, `ua` drops the search, `uc:<user>` opens a user's card,
 `du:<user>` asks to delete a user and `dy:<user>` deletes them, `rk:<user>` trusts a user or stops trusting them,
 `ae:<user>` offers to prolong a user's access and `ax:<user>.<days>` prolongs it (0: for good),
 `ug:<user>` offers the groups to move a user to and `um:<user>.<group>` moves them (group 0: none),
 `nr:<user>` resets a user's full name, `sa:<request>` and `sd:<request>` approve and decline a user's sheet,
 `groups` redraws the groups, `gs:<group>` shows a group's sheets, `gr:<group>.<sheet>` takes a sheet from a group,
 `gd:<group>` asks to delete a group and `gx:<group>` deletes it, `rl:<sheet>` lays a sheet out again, `st` redraws
-/status, `iv:<minutes>` sets how often the sheets are read.
+/status, `iv:<minutes>` sets how often the sheets are read, `fa:<user>` answers a user's /feedback.
 """
 
 import datetime as dt
@@ -26,6 +27,16 @@ from .telegram import TelegramError
 
 log = logging.getLogger(__name__)
 
+USERS_VIEW = "owner.users"  # kv: {"page", "query"} of the users list, kept while the owner pages through it
+USERS_PAGE = 10
+
+
+def matches(user: dict, query: str) -> bool:
+    """`/users <text>`: the text in the user's names, @username, full name, the note of their code or their group."""
+    fold = lambda text: (text or "").lower().replace("ё", "е")  # noqa: E731
+    where = " ".join(fold(user.get(key)) for key in ("tg_name", "username", "student", "note", "group_name"))
+    return all(word.lstrip("@") in where for word in fold(query).split())
+
 
 class OwnerCommands:
     async def owner_command(self, chat: int, cmd: str, arg: str, lang: str) -> None:
@@ -34,6 +45,7 @@ class OwnerCommands:
         elif cmd == "/codes":
             await self.api.send(chat, self.codes_view(lang))
         elif cmd == "/users":
+            self.store.put_json(USERS_VIEW, {"page": 0, "query": " ".join(arg.split())})
             await self.api.send(chat, self.users_view(lang))
         elif cmd == "/groups":
             await self.cmd_groups(chat, arg, lang)
@@ -50,50 +62,62 @@ class OwnerCommands:
         else:
             await self.api.send(chat, self.owner_help(lang))
 
-    async def owner_callback(self, chat: int, message_id: int, kind: str, arg: str, lang: str) -> str | None:
+    async def owner_callback(self, chat: int, message_id: int | None, kind: str, arg: str,
+                             lang: str) -> str | None:
+        """`message_id`: the message to redraw, None to answer in a new one."""
         number = int(arg) if arg.isdigit() else None
         if kind == "rq" and number:
-            await self.api.edit(chat, message_id, self.revoke_view(number, lang))
+            await self.show(chat, message_id, self.revoke_view(number, lang))
         elif kind == "rv" and number:
             note = tr(lang, "Revoked", "Отозван") if self.access.revoke(number) else \
                 tr(lang, "Already used or revoked", "Уже использован или отозван")
-            await self.api.edit(chat, message_id, self.codes_view(lang))
+            await self.show(chat, message_id, self.codes_view(lang))
             return note
         elif kind == "codes":
-            await self.api.edit(chat, message_id, self.codes_view(lang))
+            await self.show(chat, message_id, self.codes_view(lang))
         elif kind == "users":
-            await self.api.edit(chat, message_id, self.users_view(lang))
+            await self.show(chat, message_id, self.users_view(lang))
+        elif kind == "up" and arg.isdigit():
+            self.store.put_json(USERS_VIEW, {**self.store.get_json(USERS_VIEW, {}), "page": int(arg)})
+            await self.show(chat, message_id, self.users_view(lang))
+        elif kind == "ua":
+            self.store.put_json(USERS_VIEW, {"page": 0, "query": ""})
+            await self.show(chat, message_id, self.users_view(lang))
+        elif kind == "fa" and number:
+            return await self.answer_feedback(chat, number, lang)
+        elif kind == "uc" and number:
+            await self.show(chat, message_id, self.user_card(number, lang))
         elif kind == "du" and number:
-            await self.api.edit(chat, message_id, self.delete_view(number, lang))
+            await self.show(chat, message_id, self.delete_view(number, lang))
         elif kind == "dy" and number:
             note = await self.delete_user(number, lang)
-            await self.api.edit(chat, message_id, self.users_view(lang))
+            await self.show(chat, message_id, self.users_view(lang))
             return note
         elif kind == "rk" and number:
             user = self.access.user(number)
             if user is None:
                 return None
             self.access.set_rank(number, MEMBER if user["rank"] >= TRUSTED else TRUSTED)
-            await self.api.edit(chat, message_id, self.users_view(lang))
+            await self.show(chat, message_id, self.user_card(number, lang))
             return tr(lang, "Trusted", "Доверенный") if user["rank"] < TRUSTED else tr(lang, "Member", "Обычный")
         elif kind == "ae" and number:
             user = self.access.user(number)
             if user is None:
                 return None
-            await self.api.edit(chat, message_id, self.access_view(user, lang))
+            await self.show(chat, message_id, self.access_view(user, lang))
         elif kind == "ax":
             who, _, days = arg.partition(".")
             if not (who.isdigit() and days.isdigit()):
                 return None
             return await self.prolong(chat, message_id, int(who), int(days) or None, lang)
         elif kind == "ug" and number:
-            await self.api.edit(chat, message_id, self.move_view(number, lang))
+            await self.show(chat, message_id, self.move_view(number, lang))
         elif kind == "um":
             who, _, gid = arg.partition(".")
             if not (who.isdigit() and gid.isdigit()):
                 return None
             note = await self.move_user(int(who), int(gid), lang)
-            await self.api.edit(chat, message_id, self.users_view(lang))
+            await self.show(chat, message_id, self.user_card(int(who), lang))
             return note
         elif kind == "sa" and number:
             return await self.approve(chat, message_id, number, lang)
@@ -102,7 +126,7 @@ class OwnerCommands:
         elif kind == "nr" and number:
             return await self.reset_name(chat, message_id, number, lang)
         elif kind == "groups":
-            await self.api.edit(chat, message_id, self.groups_view(lang))
+            await self.show(chat, message_id, self.groups_view(lang))
         elif kind == "gsa":
             await self.add_group_sheet(chat, {"group": arg} if number else {}, lang)
         elif kind == "gn":
@@ -111,18 +135,18 @@ class OwnerCommands:
             await self.flow(chat, lang, [self.group_name_step(lang, number)],
                             lambda data: self.rename_group(chat, number, data["name"], lang))
         elif kind == "gs" and number:
-            await self.api.edit(chat, message_id, self.group_view(lang, number))
+            await self.show(chat, message_id, self.group_view(lang, number))
         elif kind == "gr":
             gid, _, sheet = arg.partition(".")
             if not (gid.isdigit() and sheet.isdigit()):
                 return None
             self.groups.remove_sheet(int(gid), int(sheet))
-            await self.api.edit(chat, message_id, self.group_view(lang, int(gid)))
+            await self.show(chat, message_id, self.group_view(lang, int(gid)))
         elif kind == "gd" and number:
-            await self.api.edit(chat, message_id, self.delete_group_view(number, lang))
+            await self.show(chat, message_id, self.delete_group_view(number, lang))
         elif kind == "gx" and number:
             done = self.groups.delete(number)
-            await self.api.edit(chat, message_id, self.groups_view(lang))
+            await self.show(chat, message_id, self.groups_view(lang))
             return tr(lang, "Deleted", "Удалена") if done else None
         elif kind == "rl" and number:
             sheet = self.sheets.get(number)
@@ -131,12 +155,12 @@ class OwnerCommands:
             self.poller.relayout(sheet)
             return tr(lang, "Laying it out again", "Размечаю заново")
         elif kind == "st":
-            await self.api.edit(chat, message_id, self.status_view(lang))
+            await self.show(chat, message_id, self.status_view(lang))
             return tr(lang, "Updated", "Обновлено")
         elif kind == "iv" and number:
             if not self.set_interval(number):
                 return None
-            await self.api.edit(chat, message_id, self.interval_view(lang))
+            await self.show(chat, message_id, self.interval_view(lang))
             return tr(lang, "Saved", "Сохранено")
         return None
 
@@ -356,27 +380,61 @@ class OwnerCommands:
     # --- users -----------------------------------------------------------------------------------
 
     def users_view(self, lang: str) -> Doc:
-        users, groups = self.access.users(), self.groups.all()
-        if not users:
-            return Doc().p(tr(lang, "No users yet. ", "Пользователей пока нет. "), "/invite")
-        doc = Doc().h(tr(lang, "Users", "Пользователи") + f" · {len(users)}").table(
-            [tr(lang, "Telegram", "Telegram"), tr(lang, "Full name", "ФИО"), tr(lang, "Sheets", "Таблиц"),
-             tr(lang, "Group", "Группа"), tr(lang, "Rank", "Ранг"), tr(lang, "Joined", "С"),
-             tr(lang, "Access until", "Доступ до"), tr(lang, "Code", "Код")],
-            [[self.who(u), u["student"] or "—", str(len(self.sheets.followed(u["tg_id"]))), self.group_cell(u, lang),
-              self.rank(u, lang), self.when(u["joined_at"]), self.until(u, lang), u["note"] or "—"] for u in users],
-            [None, None, "right", None, None, None, None, None])
+        """A page of users, newest first, those that match the search of `/users <text>` when there is one; a button
+        for each opens their card."""
+        state = self.store.get_json(USERS_VIEW, {})
+        query, everyone = state.get("query", ""), self.access.users()[::-1]
+        users = [u for u in everyone if matches(u, query)] if query else everyone
+        pages = max(1, -(-len(users) // USERS_PAGE))
+        page = min(state.get("page", 0), pages - 1)
+        shown = users[page * USERS_PAGE:(page + 1) * USERS_PAGE]
+        title = tr(lang, "Users", "Пользователи") + f" · {len(users)}"
+        doc = Doc().h(title + (f" · «{query}»" if query else ""))
+        if not shown:
+            doc.p(tr(lang, "Nobody found. ", "Никого не нашлось. ") if query else
+                  tr(lang, "No users yet. ", "Пользователей пока нет. "), "/invite")
+            return doc.buttons(*([(tr(lang, "Everyone", "Все"), "ua")] if query else []))
+        doc.table([tr(lang, "Telegram", "Telegram"), tr(lang, "Full name", "ФИО"), tr(lang, "Group", "Группа"),
+                   tr(lang, "Access until", "Доступ до")],
+                  [[self.who(u), u["student"] or "—", u["group_name"] or "—", self.until(u, lang)] for u in shown])
+        for start in range(0, len(shown), 2):
+            doc.buttons(*[(u["tg_name"], f"uc:{u['tg_id']}") for u in shown[start:start + 2]])
+        if pages > 1:
+            doc.buttons(*([("◀", f"up:{page - 1}")] if page else []), (f"{page + 1} / {pages}", f"up:{page}"),
+                        *([("▶", f"up:{page + 1}")] if page < pages - 1 else []))
+        if query:
+            doc.buttons((tr(lang, "Everyone", "Все"), "ua"))
+        return doc.p(i(tr(lang, "Search: /users and a name, a full name, a @username, a code's note or a group.",
+                          "Поиск: /users и имя, ФИО, @ник, пометка кода или группа.")))
+
+    def user_card(self, tg_id: int, lang: str) -> Doc:
+        """Everything about one user, and what the owner may do with them."""
+        user = next((u for u in self.access.users() if u["tg_id"] == tg_id), None)
+        if user is None:
+            return self.users_view(lang)
+        sheets = self.sheets.followed(tg_id)
+        doc = Doc().h(user["tg_name"]).table([], [
+            ["Telegram", self.who(user)],
+            [tr(lang, "Full name", "ФИО"), user["student"] or "—"],
+            [tr(lang, "Group", "Группа"), self.group_cell(user, lang)],
+            [tr(lang, "Rank", "Ранг"), self.rank(user, lang)],
+            [tr(lang, "Joined", "С нами с"), self.when(user["joined_at"])],
+            [tr(lang, "Access until", "Доступ до"), self.until(user, lang)],
+            [tr(lang, "Code", "Код"), user["note"] or "—"],
+            [tr(lang, "Sheets", "Таблицы"), ", ".join(sheet_name(s) for s in sheets) or "—"],
+            *([[tr(lang, "State", "Состояние"), tr(lang, "blocked the bot", "заблокировал(а) бота")]]
+              if user["paused"] else [])])
         doc.p(i(tr(lang, "A member's sheet that the bot doesn't read yet waits for your approval; a trusted user's "
                          "doesn't.",
                    "Новую для бота таблицу обычного пользователя ты сначала одобряешь, доверенного — нет.")))
-        for u in users[:30]:
-            trusted = u["rank"] >= TRUSTED
-            rank = tr(lang, "Member: ", "Обычный: ") if trusted else tr(lang, "Trust: ", "Доверять: ")
-            doc.buttons((rank + u["tg_name"], f"rk:{u['tg_id']}"),
-                        *([(tr(lang, "Group: ", "Группа: ") + u["tg_name"], f"ug:{u['tg_id']}")] if groups else []),
-                        (tr(lang, "Access: ", "Доступ: ") + u["tg_name"], f"ae:{u['tg_id']}"),
-                        (tr(lang, "Delete ", "Удалить ") + u["tg_name"], f"du:{u['tg_id']}", "danger"))
-        return doc
+        trusted = user["rank"] >= TRUSTED
+        doc.buttons((tr(lang, "Make a member", "Сделать обычным") if trusted else tr(lang, "Trust", "Доверять"),
+                     f"rk:{tg_id}"),
+                    *([(tr(lang, "Group", "Группа"), f"ug:{tg_id}")] if self.groups.all() else []),
+                    (tr(lang, "Access", "Доступ"), f"ae:{tg_id}"))
+        doc.buttons(*([(tr(lang, "Reset the full name", "Сбросить ФИО"), f"nr:{tg_id}")] if user["student"] else []),
+                    (tr(lang, "Delete", "Удалить"), f"du:{tg_id}", "danger"))
+        return doc.buttons((tr(lang, "« Users", "« Пользователи"), "users"))
 
     def until(self, user: dict, lang: str) -> str:
         if not user["expires_at"]:
@@ -388,14 +446,15 @@ class OwnerCommands:
         doc = Doc().p(tr(lang, "Access of ", "Доступ "), self.who(user), ": ", b(self.until(user, lang)), ". ",
                       tr(lang, "Days are added to its end, or to now when it has ended.",
                          "Дни добавляются к концу доступа, а если он закончился — к сегодня."))
-        return doc.buttons(*self.prolong_buttons(user, lang)).buttons((tr(lang, "Back", "Назад"), "users"))
+        return doc.buttons(*self.prolong_buttons(user, lang)).buttons((tr(lang, "Back", "Назад"),
+                                                                       f"uc:{user['tg_id']}"))
 
-    async def prolong(self, chat: int, message_id: int, tg_id: int, days: int | None, lang: str) -> str | None:
+    async def prolong(self, chat: int, message_id: int | None, tg_id: int, days: int | None, lang: str) -> str | None:
         """Prolong a user's access (None: for good); the message turns into the users list, the user is told."""
         user = self.access.prolong(tg_id, days)
         if user is None:
             return tr(lang, "Already deleted", "Уже удалён")
-        await self.api.edit(chat, message_id, self.users_view(lang))
+        await self.show(chat, message_id, self.user_card(tg_id, lang))
         ulang = user["lang"]
         await self.tell(user, Doc().p(tr(ulang, "The owner prolonged your access: ", "Владелец продлил доступ: "),
                                       b(tr(ulang, "until ", "до ") + self.when(user["expires_at"]))
@@ -424,7 +483,7 @@ class OwnerCommands:
             choice.append((tr(lang, "No group", "Без группы"), f"um:{tg_id}.0"))
         for start in range(0, len(choice), 4):
             doc.buttons(*choice[start:start + 4])
-        return doc.buttons((tr(lang, "Cancel", "Отмена"), "users"))
+        return doc.buttons((tr(lang, "Cancel", "Отмена"), f"uc:{tg_id}"))
 
     async def move_user(self, tg_id: int, gid: int, lang: str) -> str | None:
         user = self.access.user(tg_id)
@@ -458,7 +517,7 @@ class OwnerCommands:
                       tr(lang, "Everything the bot keeps about them is erased; they'll need a new code to come back.",
                          "Все данные пользователя сотрутся; вернуться можно будет только с новым кодом."))
         return doc.buttons((tr(lang, "Yes, delete", "Да, удалить"), f"dy:{tg_id}", "danger"),
-                           (tr(lang, "Cancel", "Отмена"), "users"))
+                           (tr(lang, "Cancel", "Отмена"), f"uc:{tg_id}"))
 
     async def delete_user(self, tg_id: int, lang: str) -> str:
         user = self.access.user(tg_id)
@@ -472,9 +531,28 @@ class OwnerCommands:
             log.info("telling a deleted user failed: %s", e)
         return tr(lang, "Deleted", "Удалён")
 
+    async def answer_feedback(self, chat: int, tg_id: int, lang: str) -> str | None:
+        """«Answer» under a user's /feedback: the owner's next message goes to them."""
+        user = self.access.user(tg_id)
+        if user is None:
+            return tr(lang, "Already deleted", "Уже удалён")
+
+        async def done(data: dict) -> None:
+            ulang = user["lang"]
+            answer = Doc().p(b(tr(ulang, "The owner answers:", "Ответ владельца:"))).quote(data["text"])
+            if await self.tell(user, answer):
+                await self.api.send(chat, Doc().p(tr(lang, "Sent to ", "Отправлено: "), self.who(user), "."))
+            else:
+                await self.api.send(chat, tr(lang, "Not delivered: the user blocked the bot.",
+                                             "Не доставлено: пользователь заблокировал бота."))
+
+        step = Step("text", lambda data: Doc().p(tr(lang, "Your answer to ", "Ответ для "), self.who(user), ":"))
+        await self.flow(chat, lang, [step], done)
+        return None
+
     # --- requests for sheets ----------------------------------------------------------------------
 
-    async def approve(self, chat: int, message_id: int, rid: int, lang: str) -> str:
+    async def approve(self, chat: int, message_id: int | None, rid: int, lang: str) -> str:
         try:
             done = self.sheets.approve(rid)
         except SheetError:
@@ -483,7 +561,7 @@ class OwnerCommands:
             return tr(lang, "Already handled", "Уже решено")
         request, sheet = done
         user = self.access.user(request["tg_id"])
-        await self.api.edit(chat, message_id, Doc().p(
+        await self.show(chat, message_id, Doc().p(
             tr(lang, "Approved: ", "Одобрено: "), link(request["url"], request["url"]), tr(lang, " for ", " для "),
             self.who(user), "."))
         ulang = user["lang"]
@@ -493,12 +571,12 @@ class OwnerCommands:
             self.read_soon(user["tg_id"], [sheet["id"]])
         return tr(lang, "Approved", "Одобрено")
 
-    async def decline(self, chat: int, message_id: int, rid: int, lang: str) -> str:
+    async def decline(self, chat: int, message_id: int | None, rid: int, lang: str) -> str:
         request = self.sheets.drop_request(rid)
         if request is None:
             return tr(lang, "Already handled", "Уже решено")
         user = self.access.user(request["tg_id"])
-        await self.api.edit(chat, message_id, Doc().p(
+        await self.show(chat, message_id, Doc().p(
             tr(lang, "Declined: ", "Отклонено: "), link(request["url"], request["url"]), tr(lang, " for ", " для "),
             self.who(user), "."))
         ulang = user["lang"]
@@ -506,13 +584,13 @@ class OwnerCommands:
                                       link(request["url"], request["url"]), "."))
         return tr(lang, "Declined", "Отклонено")
 
-    async def reset_name(self, chat: int, message_id: int, tg_id: int, lang: str) -> str:
+    async def reset_name(self, chat: int, message_id: int | None, tg_id: int, lang: str) -> str:
         user = self.access.user(tg_id)
         if user is None or not user["student"]:
             return tr(lang, "Nothing to reset", "Сбрасывать нечего")
         self.access.set_student(tg_id, None)
         self.grades.forget(tg_id)
-        await self.api.edit(chat, message_id, Doc().p(
+        await self.show(chat, message_id, Doc().p(
             tr(lang, "Full name ", "ФИО "), b(user["student"]), tr(lang, " of ", " у "), self.who(user),
             tr(lang, " is reset.", " сброшено.")))
         ulang = user["lang"]

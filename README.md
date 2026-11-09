@@ -22,11 +22,12 @@ and no public web part: the bot only talks to the Bot API by long polling.
 | user | `/group` | your group, with buttons to move to another one: you follow the shared sheets of your group. A group that came with the invite code is changed by the owner only |
 | user | `/quiet [23-8\|off]` | quiet hours: messages then come without a sound; 23:00–8:00 by default |
 | user | `/lang [en\|ru]` | the bot's language |
+| user | `/feedback [text]` | write to the owner: a question, a bug, an idea; the owner's answer comes back in the chat (5 a day) |
 | user | `/help` | the commands |
 | user | `/stop` | erase everything the bot keeps about you and leave |
 | owner | `/invite [group] [x5\|x*] [3d] [+30d\|+31.12] [note]` | an invite code and its link, the words in any order: `x5` lets in up to 5 people and `x*` any number (one by default); `3d` or `12h` is how long the code works (`INVITE_DAYS` by default); `+30d` gives access for 30 days from coming in and `+31.12` until that date (for good by default). With a group the user lands in it, without one they pick it. `/invite help` explains |
 | owner | `/codes` | open codes: how many came in, the access they give; a button to revoke each |
-| owner | `/users` | users, with buttons to trust each (their new sheets need no approval), move them to another group, prolong their access or delete them |
+| owner | `/users [text]` | users, ten a page, newest first; with text, those whose name, @username, full name, code note or group has it. A user's card trusts them (their new sheets need no approval), moves them to another group, prolongs their access, resets their full name or deletes them |
 | owner | `/groups [name [new name]]` | groups: make one, rename one; buttons show a group's sheets or delete it |
 | owner | `/groupsheet [group] [link [short name]]` | a group's shared sheets: everyone in the group follows them, newcomers too |
 | owner | `/rename <link> [short name]` | a sheet's short name and hashtag (up to 10 characters) for everyone who follows it; without one, its title in Google |
@@ -69,6 +70,14 @@ points when its scale is not 0–10, and the grade before for a changed one. Wit
 without a sound. Grades that could not be sent wait for the next poll for up to a week; a user who blocked the bot
 is paused until they write to it again, and the owner is told.
 
+## The owner's chat
+
+What needs the owner comes as a message with a sound: a sheet to approve, a request to prolong access, a complaint
+about a layout, a `/feedback` message, a sheet failing for 12 hours, the LLM limit. What only tells (a user came in,
+set a full name, changed groups, left or blocked the bot) gathers in one silent "News" message, edited as news comes,
+until the owner writes to the bot or presses a button; the next news starts a new one below. A button in it answers
+in a new message, so the news stays readable.
+
 ## Running
 
 You need [uv](https://docs.astral.sh/uv/) and a bot token from [@BotFather](https://t.me/BotFather).
@@ -87,15 +96,19 @@ docker compose up -d --build
 docker compose logs -f
 ```
 
-The SQLite database lives in `data/`; back it up while the bot is stopped (`docker compose stop`).
+The SQLite database lives in `data/`. The bot copies it once a day after 04:00 local time to
+`data/backups/gradebot-<date>.db` and keeps the last 14; copy that folder off the server now and then. To restore,
+stop the bot, put a copy in place of `data/gradebot.db` and start it again.
 
 ## Privacy
 
 The bot keeps each user's Telegram id and name, language, the full name they set, their sheets and grades. `/stop`
-erases all of it; the owner can erase a user too. Invite codes are stored as hashes only. When a user's access for a
-while ends, the bot stops reading their sheets and writing to them, and keeps their data until the owner prolongs
-the access or deletes them. The user hears of it a day before and when it comes, with a button that asks the owner to
-prolong it; the owner hears of it only then, and sees the rest in `/status` and `/users`.
+erases all of it, after the access ended too; the owner can erase a user too. Daily copies of the database keep what
+was erased for up to 14 days. `/feedback` messages go to the owner's chat and are not stored. Invite codes are stored
+as hashes only. When a user's access for a while ends, the bot stops reading their sheets and writing to them, and
+keeps their data until the owner prolongs the access or deletes them. The user hears of it a day before and when it
+comes, with a button that asks the owner to prolong it; the owner hears of it only then, and sees the rest in
+`/status` and `/users`.
 
 To lay out a tab, Claude Haiku sees the tab's top rows (other students' rows may be among them) and one follower's
 row without their name. Sheets are open to anyone with the link anyway; who may use the bot is up to the owner,

@@ -5,7 +5,7 @@ import pytest
 from gradebot.access import MEMBER, TRUSTED
 from gradebot.sheets import SHEETS_PER_USER, SheetError
 
-from .conftest import OWNER, buttons, callback, invite_code, message, press
+from .conftest import OWNER, add_user, buttons, callback, invite_code, message, press
 from .test_sheets import ALG, CALC
 
 PETR, ANNA = 2001, 2002
@@ -63,14 +63,15 @@ async def test_decline_and_cancel(bot, api, sheets, petr):
 
 async def test_the_owner_trusts_a_user_in_users(bot, api, sheets, access, petr):
     await bot.handle(message(OWNER, "/users"))
-    listing = api.last(OWNER)
-    assert "обычный" in listing["text"]
-    await bot.handle(callback(OWNER, buttons(listing)["Доверять: Пётр"]))
+    await bot.handle(callback(OWNER, buttons(api.last(OWNER))["Пётр"]))
+    card = api.last(OWNER)
+    assert "обычный" in card["text"]
+    await bot.handle(callback(OWNER, buttons(card)["Доверять"]))
     assert access.user(PETR)["rank"] == TRUSTED and "доверенный" in api.last(OWNER)["text"]
     await bot.handle(message(PETR, f"/sheet {CALC}"))
     await press(bot, PETR)
     assert "Подписал на" in api.last(PETR)["text"] and sheets.requests() == []
-    await bot.handle(callback(OWNER, buttons(api.last(OWNER))["Обычный: Пётр"]))
+    await bot.handle(callback(OWNER, buttons(api.last(OWNER))["Сделать обычным"]))
     assert access.user(PETR)["rank"] == MEMBER
 
 
@@ -82,3 +83,28 @@ async def test_requests_count_towards_the_limit(sheets, access, petr):
         sheets.ask(PETR, ALG)
     approved = sheets.approve(sheets.requests(PETR)[0]["id"])  # a request becomes a sheet within the limit
     assert approved is not None and len(sheets.followed(PETR)) == 2
+
+
+async def test_users_come_in_pages_and_can_be_searched(bot, api, access):
+    for n in range(23):
+        add_user(access, 3000 + n, f"Студент Номер{n}" if n % 2 else None, name=f"Человек{n}")
+    await bot.handle(message(OWNER, "/users"))
+    first = api.last(OWNER)
+    assert "Пользователи · 23" in first["text"] and "Человек22" in first["text"] and "Человек12" not in first["text"]
+    assert {"▶", "1 / 3"} <= set(buttons(first)) and "◀" not in buttons(first)
+    await bot.handle(callback(OWNER, buttons(first)["▶"]))
+    assert "Человек12" in api.last(OWNER)["text"] and "◀" in buttons(api.last(OWNER))
+    await bot.handle(callback(OWNER, "up:99"))                     # past the end: the last page
+    assert "3 / 3" in buttons(api.last(OWNER)) and "Человек0" in api.last(OWNER)["text"]
+
+    await bot.handle(message(OWNER, "/users номер1"))              # the full name, any case
+    found = api.last(OWNER)
+    assert "Пользователи · 6 · «номер1»" in found["text"]       # 1, 11, 13, 15, 17, 19
+    await bot.handle(callback(OWNER, buttons(found)["Человек11"]))
+    assert "Студент Номер11" in api.last(OWNER)["text"]
+    await bot.handle(callback(OWNER, "users"))                     # back keeps the search
+    assert "«номер1»" in api.last(OWNER)["text"]
+    await bot.handle(callback(OWNER, "ua"))
+    assert "Пользователи · 23" in api.last(OWNER)["text"]
+    await bot.handle(message(OWNER, "/users нетакого"))
+    assert "Никого не нашлось" in api.last(OWNER)["text"]

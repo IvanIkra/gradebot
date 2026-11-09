@@ -116,7 +116,8 @@ async def test_access_for_a_while(bot, api, access, sheets, clock):
     assert "Владелец продлил доступ: <b>до 16.12 16:00</b>" in api.last(PETR)["text"]
     assert len(sheets.to_read()) == 1
     await bot.handle(message(OWNER, "/users"))
-    await bot.handle(callback(OWNER, buttons(api.last(OWNER))["Доступ: Пётр"]))
+    await bot.handle(callback(OWNER, buttons(api.last(OWNER))["Пётр"]))
+    await bot.handle(callback(OWNER, buttons(api.last(OWNER))["Доступ"]))
     view = api.last(OWNER)
     assert "Доступ Пётр (@petr_example): <b>16.12 16:00</b>" in view["text"]
     assert access.user(PETR)["prolong_asked"] == 0           # prolonged: may ask again next time

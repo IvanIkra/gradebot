@@ -212,12 +212,13 @@ async def test_a_group_from_the_code_is_changed_by_the_owner_only(bot, api, acce
     assert api.calls[-1][1]["text"] == "Группу меняет только владелец" and access.user(PETR)["grp"] == a1
 
     await bot.handle(message(OWNER, "/users"))
-    listing = api.last(OWNER)
-    assert "A1 (по коду)" in listing["text"]
-    await bot.handle(callback(OWNER, buttons(listing)["Группа: Пётр"]))
+    await bot.handle(callback(OWNER, buttons(api.last(OWNER))["Пётр"]))
+    card = api.last(OWNER)
+    assert "A1 (по коду)" in card["text"]
+    await bot.handle(callback(OWNER, buttons(card)["Группа"]))
     choice = api.last(OWNER)
     assert "Перевести Пётр (@petr_example) из <b>A1</b> в:" in choice["text"]
-    assert buttons(choice) == {"B2": f"um:{PETR}.{b2}", "Без группы": f"um:{PETR}.0", "Отмена": "users"}
+    assert buttons(choice) == {"B2": f"um:{PETR}.{b2}", "Без группы": f"um:{PETR}.0", "Отмена": f"uc:{PETR}"}
     await bot.handle(callback(OWNER, f"um:{PETR}.{b2}"))
     assert access.user(PETR)["grp"] == b2 and "B2 (по коду)" in api.last(OWNER)["text"]
     assert "Владелец перевёл тебя в группу <b>B2</b>" in api.last(PETR)["text"]

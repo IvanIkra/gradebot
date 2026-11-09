@@ -37,7 +37,7 @@ async def test_invite_and_come_in(bot, api, access):
     assert access.user(PETR)["lang"] == "ru"
     note = api.last(OWNER)
     assert "Пётр (@petr_example): вход по коду «Петя»" in note["text"]
-    assert buttons(note) == {"Удалить": f"du:{PETR}"}
+    assert buttons(note) == {"Удалить Пётр": f"du:{PETR}"}
 
     await bot.handle(message(ANNA, f"/start {code}"))
     assert access.user(ANNA) is None and "Этот код не подходит" in api.last(ANNA)["text"]
@@ -87,12 +87,15 @@ async def test_owner_deletes_a_user(bot, api, access):
     await bot.handle(message(PETR, f"/start {await invite(bot, api)}"))
     await bot.handle(message(OWNER, "/users"))
     listing = api.last(OWNER)
-    assert "Пётр (@petr_example)" in listing["text"] and "Петя" in listing["text"]
-    await bot.handle(callback(OWNER, buttons(listing)["Удалить Пётр"]))
+    assert "Пётр (@petr_example)" in listing["text"]
+    await bot.handle(callback(OWNER, buttons(listing)["Пётр"]))
+    card = api.last(OWNER)
+    assert "Петя" in card["text"] and "обычный" in card["text"]
+    await bot.handle(callback(OWNER, buttons(card)["Удалить"]))
     confirm = api.last(OWNER)
     assert "Удалить Пётр (@petr_example)?" in confirm["text"]
     await bot.handle(callback(OWNER, buttons(confirm)["Отмена"]))
-    assert access.user(PETR) is not None
+    assert access.user(PETR) is not None and "« Пользователи" in api.last(OWNER)["text"]  # back to the card
     await bot.handle(callback(OWNER, f"dy:{PETR}"))
     assert access.user(PETR) is None
     assert "закрыл тебе доступ" in api.last(PETR)["text"]

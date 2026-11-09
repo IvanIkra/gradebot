@@ -16,6 +16,7 @@ from .grades import Grades
 from .groups import Groups
 from .i18n import guess, tr
 from .llm.budget import Budget
+from .news import OwnerNews
 from .notices import ReadNotices
 from .owner import OwnerCommands
 from .poller import Poller
@@ -48,7 +49,7 @@ def full_name(user: dict) -> str:
     return " ".join(filter(None, (user.get("first_name"), user.get("last_name")))) or str(user["id"])
 
 
-class Bot(OwnerCommands, UserCommands, ReadNotices, Dialogs):
+class Bot(OwnerCommands, UserCommands, ReadNotices, OwnerNews, Dialogs):
     def __init__(self, api: BotApi, store: Store, access: Access, sheets: Sheets, owner_id: int, zone: dt.tzinfo,
                  username: str = "", now: Callable[[], dt.datetime] = clock.now_utc):
         self.api, self.store, self.access, self.sheets = api, store, access, sheets
@@ -72,10 +73,19 @@ class Bot(OwnerCommands, UserCommands, ReadNotices, Dialogs):
         return join(user["tg_name"], f" (@{user['username']})" if user.get("username") else "")
 
     async def tell_owner(self, doc: Doc, buttons: dict | None = None) -> None:
+        """Something the owner should act on or know at once: a message with a sound, under the digest of news."""
+        self.close_news()
         try:
             await self.api.send(self.owner_id, doc, buttons)
         except TelegramError as e:
             log.warning("telling the owner failed: %s", e)
+
+    async def show(self, chat: int, message_id: int | None, doc: Doc | str) -> None:
+        """Redraw a message in place, or send it as a new one when there is none to redraw."""
+        if message_id is None:
+            await self.api.send(chat, doc)
+        else:
+            await self.api.edit(chat, message_id, doc)
 
     def read_soon(self, tg_id: int | None, sheets: list[int]) -> None:
         """Read these sheets now; `tg_id` is told how it went."""
@@ -99,10 +109,13 @@ class Bot(OwnerCommands, UserCommands, ReadNotices, Dialogs):
             return
         self.access.set_paused(user["tg_id"], True)
         lang = self.owner_lang
-        await self.tell_owner(Doc().p(self.who(user), tr(
-            lang, " blocked the bot: their sheets are paused until they write to it again.",
-            ": бот заблокирован, таблицы на паузе до нового сообщения боту."))
-            .buttons((tr(lang, "Delete", "Удалить"), f"du:{user['tg_id']}", "danger")))
+        await self.news(self.who(user), tr(lang, " blocked the bot: their sheets are paused until they write to it "
+                                                 "again.",
+                                           ": бот заблокирован, таблицы на паузе до нового сообщения боту."),
+                        buttons=(self.delete_button(user, lang),))
+
+    def delete_button(self, user: dict, lang: str) -> tuple:
+        return (tr(lang, "Delete ", "Удалить ") + user["tg_name"], f"du:{user['tg_id']}", "danger")
 
     # --- access for a while --------------------------------------------------------------------
 
@@ -190,6 +203,7 @@ class Bot(OwnerCommands, UserCommands, ReadNotices, Dialogs):
         sender, chat = msg["from"], msg["chat"]["id"]
         cmd, arg = command(msg.get("text") or "")
         if sender["id"] == self.owner_id:
+            self.close_news()
             lang = guess(sender.get("language_code"))
             if lang != self.owner_lang:
                 self.store.put_json(OWNER_LANG, lang)
@@ -225,7 +239,9 @@ class Bot(OwnerCommands, UserCommands, ReadNotices, Dialogs):
                 lang = self.owner_lang if sender["id"] == self.owner_id else user["lang"]
                 note = await self.dialog_callback(chat, message_id, kind, arg, lang)
             elif sender["id"] == self.owner_id:
-                note = await self.owner_callback(chat, message_id, kind, arg, self.owner_lang)
+                self.close_news()
+                where = None if self.is_digest(message_id) else message_id  # a digest stays as it is
+                note = await self.owner_callback(chat, where, kind, arg, self.owner_lang)
             elif (user := self.access.user(sender["id"])) is not None:
                 if kind == "pr":
                     note = await self.ask_prolong(user)
@@ -258,12 +274,11 @@ class Bot(OwnerCommands, UserCommands, ReadNotices, Dialogs):
                 note = f" «{invite['note']}»" if invite["note"] else ""
                 owner = self.owner_lang
                 count = f" ({invite['used']}/{invite['uses'] or '∞'})" if invite["uses"] != 1 else ""
-                await self.tell_owner(
-                    Doc().p(self.who(user), tr(owner, " came in with the code", ": вход по коду"), note, count,
-                            *([tr(owner, ", group ", ", группа "), group["name"]] if group else []),
-                            *([tr(owner, ", access until ", ", доступ до "), self.when(user["expires_at"])]
-                              if user["expires_at"] else []))
-                    .buttons((tr(owner, "Delete", "Удалить"), f"du:{tg_id}", "danger")))
+                await self.news(self.who(user), tr(owner, " came in with the code", ": вход по коду"), note, count,
+                                *([tr(owner, ", group ", ", группа "), group["name"]] if group else []),
+                                *([tr(owner, ", access until ", ", доступ до "), self.when(user["expires_at"])]
+                                  if user["expires_at"] else []),
+                                buttons=(self.delete_button(user, owner),))
                 return
             if self.access.locked(tg_id):
                 return

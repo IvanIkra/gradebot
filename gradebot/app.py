@@ -6,6 +6,7 @@ from pathlib import Path
 
 import aiohttp
 
+from . import backups
 from .access import Access
 from .bot import Bot
 from .config import Env
@@ -25,10 +26,12 @@ OFFSET = "updates.offset"   # kv: the next update to ask for, so a restart neith
 USER_COMMANDS = {
     "en": [("grades", "your grades"), ("sheets", "your sheets"), ("sheet", "follow a Google Sheet"),
            ("group", "your group"), ("name", "your full name"),
-           ("quiet", "quiet hours"), ("lang", "language"), ("help", "commands"), ("stop", "erase your data and leave")],
+           ("quiet", "quiet hours"), ("lang", "language"), ("feedback", "write to the owner"), ("help", "commands"),
+           ("stop", "erase your data and leave")],
     "ru": [("grades", "твои оценки"), ("sheets", "твои таблицы"), ("sheet", "подписаться на таблицу"),
            ("group", "твоя группа"), ("name", "ФИО"),
-           ("quiet", "тихие часы"), ("lang", "язык"), ("help", "команды"), ("stop", "удалить свои данные и уйти")],
+           ("quiet", "тихие часы"), ("lang", "язык"), ("feedback", "написать владельцу"), ("help", "команды"),
+           ("stop", "удалить свои данные и уйти")],
 }
 OWNER_COMMANDS = {
     "en": [("invite", "an invite code"), ("codes", "open codes"), ("users", "users"),
@@ -59,7 +62,7 @@ SHORT_DESCRIPTION = {
 class Service:
     def __init__(self, env: Env, data: Path):
         data.mkdir(parents=True, exist_ok=True)
-        self.env = env
+        self.env, self.data = env, data
         self.store = Store(data / "gradebot.db")
         self.access = Access(self.store, env.invite_days)
         self.sheets = Sheets(self.store)
@@ -78,7 +81,8 @@ class Service:
             poller.on_read, self.budget.notify = bot.after_read, bot.budget_notice
             await self.set_commands(api)
             await self.set_profile(api)
-            await asyncio.gather(poll(api, bot, self.store), poller.run(), bot.watch_access())
+            await asyncio.gather(poll(api, bot, self.store), poller.run(), bot.watch_access(),
+                                 backups.run(self.store, self.data / "backups", self.env.zone))
 
     async def set_commands(self, api: BotApi) -> None:
         for lang in ("en", "ru"):

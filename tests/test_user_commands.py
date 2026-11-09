@@ -28,7 +28,7 @@ async def test_name_tells_the_owner_and_can_be_reset(bot, api, access, petr):
     await bot.handle(message(PETR, "/name Петров Пётр Петрович"))
     assert "(было Петров Пётр)" in api.last(OWNER)["text"]
 
-    await bot.handle(callback(OWNER, buttons(note)["Сбросить"]))
+    await bot.handle(callback(OWNER, buttons(note)["Сбросить ФИО: Пётр"]))
     assert access.user(PETR)["student"] is None
     assert "ФИО <b>Петров Пётр Петрович</b> у Пётр (@petr_example) сброшено" in api.last(OWNER)["text"]
     assert "Владелец сбросил твоё ФИО" in api.last(PETR)["text"]
@@ -153,3 +153,31 @@ async def test_a_user_without_a_full_name_is_reminded_once(bot, api, access, pet
     await bot.remind_names()
     await bot.remind_names()
     assert len(api.sent(PETR)) == count + 1 and "нужно ФИО" in api.last(PETR)["text"]
+
+
+async def test_feedback_reaches_the_owner_who_answers(bot, api, petr):
+    await bot.handle(message(PETR, "/feedback"))
+    assert "Что передать владельцу" in api.last(PETR)["text"]
+    await bot.handle(message(PETR, "Не вижу оценки за <КР2>"))
+    assert "Ответ придёт сюда" in api.last(PETR)["text"]
+    note = api.last(OWNER)
+    assert "Пётр (@petr_example) пишет:" in note["text"] and "Не вижу оценки за &lt;КР2&gt;" in note["text"]
+    [to_owner] = [params for method, params in api.calls if method == "sendRichMessage"
+                  and params["chat_id"] == OWNER and "пишет:" in params["rich_message"]["html"]]
+    assert "disable_notification" not in to_owner  # a message that needs the owner comes with a sound
+
+    await bot.handle(callback(OWNER, buttons(note)["Ответить"]))
+    assert "Ответ для Пётр (@petr_example)" in api.last(OWNER)["text"]
+    await bot.handle(message(OWNER, "Скоро починю"))
+    assert "Ответ владельца:" in api.last(PETR)["text"] and "Скоро починю" in api.last(PETR)["text"]
+    assert "Отправлено: Пётр" in api.last(OWNER)["text"]
+
+
+async def test_feedback_has_a_daily_limit(bot, api, petr, clock):
+    for n in range(5):
+        await bot.handle(message(PETR, f"/feedback идея {n}"))
+    await bot.handle(message(PETR, "/feedback ещё одна"))
+    assert "На сегодня хватит" in api.last(PETR)["text"] and "ещё одна" not in api.last(OWNER)["text"]
+    clock.advance(days=1, minutes=1)
+    await bot.handle(message(PETR, "/feedback ещё одна"))
+    assert "ещё одна" in api.last(OWNER)["text"]
