@@ -126,6 +126,20 @@ class Access:
             self.db.execute("update users set tg_name = ?, username = ?, paused = 0 where tg_id = ?",
                             (tg_name, username, tg_id))
 
+    def set_student(self, tg_id: int, student: str | None) -> None:
+        """A new name means new rows in the sheets: what was read for the old one goes (later stages)."""
+        with self.db:
+            self.db.execute("update users set student = ? where tg_id = ?", (student, tg_id))
+
+    def set_lang(self, tg_id: int, lang: str) -> None:
+        with self.db:
+            self.db.execute("update users set lang = ? where tg_id = ?", (lang, tg_id))
+
+    def set_quiet(self, tg_id: int, hours: tuple[int, int] | None) -> None:
+        start, end = hours or (None, None)
+        with self.db:
+            self.db.execute("update users set quiet_from = ?, quiet_to = ? where tg_id = ?", (start, end, tg_id))
+
     def set_paused(self, tg_id: int, paused: bool) -> None:
         with self.db:
             self.db.execute("update users set paused = ? where tg_id = ?", (int(paused), tg_id))

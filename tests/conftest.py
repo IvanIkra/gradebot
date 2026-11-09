@@ -6,6 +6,7 @@ import pytest
 
 from gradebot.access import Access
 from gradebot.bot import Bot
+from gradebot.sheets import Sheets
 from gradebot.store import Store
 from gradebot.telegram import BotApi, TelegramError
 
@@ -106,5 +107,10 @@ def api() -> FakeApi:
 
 
 @pytest.fixture
-def bot(api, store, access, clock) -> Bot:
-    return Bot(api, store, access, OWNER, ZONE, username="gradebot_test_bot", now=clock)
+def sheets(store, clock) -> Sheets:
+    return Sheets(store, now=clock)
+
+
+@pytest.fixture
+def bot(api, store, access, sheets, clock) -> Bot:
+    return Bot(api, store, access, sheets, OWNER, ZONE, username="gradebot_test_bot", now=clock)

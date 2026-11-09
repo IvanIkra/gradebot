@@ -32,6 +32,22 @@ create table if not exists users (
     joined_at text not null,
     invite_id integer references invites(id)
 );
+create table if not exists sheets (
+    id integer primary key,         -- short, for buttons
+    sheet_id text not null unique,  -- the id in the Google link
+    url text not null,
+    title text,                     -- the sheet's title, known after the first read
+    course text not null default '',  -- the course in front of a work's label, at most 10 characters
+    group_sheet integer not null default 0,  -- every user gets it, now and when they join
+    added_by integer not null,      -- Telegram id
+    added_at text not null
+);
+create table if not exists subscriptions (
+    tg_id integer not null references users(tg_id) on delete cascade,
+    sheet integer not null references sheets(id) on delete cascade,
+    added_at text not null,
+    primary key (tg_id, sheet)
+);
 """
 
 

@@ -9,6 +9,7 @@ import aiohttp
 from .access import Access
 from .bot import Bot
 from .config import Env
+from .sheets import Sheets
 from .store import Store
 from .telegram import BotApi, TelegramError
 
@@ -17,13 +18,16 @@ log = logging.getLogger(__name__)
 OFFSET = "updates.offset"   # kv: the next update to ask for, so a restart neither loses nor repeats updates
 
 USER_COMMANDS = {
-    "en": [("help", "commands"), ("stop", "erase your data and leave")],
-    "ru": [("help", "команды"), ("stop", "удалить свои данные и уйти")],
+    "en": [("sheets", "your sheets"), ("sheet", "follow a Google Sheet"), ("name", "your full name"),
+           ("quiet", "quiet hours"), ("lang", "language"), ("help", "commands"), ("stop", "erase your data and leave")],
+    "ru": [("sheets", "твои таблицы"), ("sheet", "подписаться на таблицу"), ("name", "ФИО"),
+           ("quiet", "тихие часы"), ("lang", "язык"), ("help", "команды"), ("stop", "удалить свои данные и уйти")],
 }
 OWNER_COMMANDS = {
-    "en": [("invite", "a one-time invite code"), ("codes", "unused codes"), ("users", "users"), ("help", "commands")],
+    "en": [("invite", "a one-time invite code"), ("codes", "unused codes"), ("users", "users"),
+           ("groupsheet", "the group's sheets"), ("course", "a sheet's course"), ("help", "commands")],
     "ru": [("invite", "одноразовый код приглашения"), ("codes", "неиспользованные коды"), ("users", "пользователи"),
-           ("help", "команды")],
+           ("groupsheet", "общие таблицы"), ("course", "курс таблицы"), ("help", "команды")],
 }
 
 
@@ -33,12 +37,14 @@ class Service:
         self.env = env
         self.store = Store(data / "gradebot.db")
         self.access = Access(self.store, env.invite_days)
+        self.sheets = Sheets(self.store)
 
     async def run(self) -> None:
         async with BotApi(self.env.bot_token, self.env.api_url) as api:
             me = await api.call("getMe")
             log.info("running as @%s", me.get("username"))
-            bot = Bot(api, self.store, self.access, self.env.owner_id, self.env.zone, me.get("username") or "")
+            bot = Bot(api, self.store, self.access, self.sheets, self.env.owner_id, self.env.zone,
+                      me.get("username") or "")
             await self.set_commands(api)
             await poll(api, bot, self.store)
 

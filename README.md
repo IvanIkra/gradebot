@@ -7,19 +7,28 @@ new and changed grades to a private chat.
 Access is by one-time invite codes from the owner. There is no sign-up and no public web part: the bot only talks
 to the Bot API by long polling.
 
-> Status: early. The skeleton is done: invite codes, users, owner's commands. Reading sheets and sending grades come
-> next.
+> Status: early. Invite codes, users, their names, sheets, quiet hours and languages are done. Reading the sheets
+> and sending grades come next.
 
 ## Commands
 
 | Who | Command | What it does |
 |---|---|---|
 | anyone | `/start <code>` | come in with an invite code (the `t.me/<bot>?start=<code>` link does the same) |
+| user | `/name Surname Name` | your full name exactly as the sheets have it; the owner sees it and may reset it |
+| user | `/sheet <link>` | follow a Google Sheet (open to anyone with the link) |
+| user | `/sheets` | your sheets, with a button to unfollow each |
+| user | `/quiet [23-8\|off]` | quiet hours: messages then come without a sound; 23:00–8:00 by default |
+| user | `/lang [en\|ru]` | the bot's language |
 | user | `/help` | the commands |
 | user | `/stop` | erase everything the bot keeps about you and leave |
 | owner | `/invite [note]` | a one-time invite code and its link |
 | owner | `/codes` | unused codes, with a button to revoke each |
 | owner | `/users` | users, with a button to delete each |
+| owner | `/groupsheet [link [course]]` | the group's sheets: every user follows them, new users too |
+| owner | `/course <link> <course>` | a sheet's course, the short name in front of its works (up to 10 characters) |
+
+A sheet is stored once for everyone who follows it, so it will be downloaded and laid out once.
 
 ## Messages
 
