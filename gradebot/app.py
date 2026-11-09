@@ -33,10 +33,12 @@ USER_COMMANDS = {
 OWNER_COMMANDS = {
     "en": [("invite", "a one-time invite code"), ("codes", "unused codes"), ("users", "users"),
            ("groupsheet", "the group's sheets"), ("course", "a sheet's course"),
-           ("relayout", "lay a sheet out again"), ("status", "sheets, users, Haiku"), ("help", "commands")],
+           ("relayout", "lay a sheet out again"), ("status", "sheets, users, Haiku"),
+           ("interval", "how often the sheets are read"), ("help", "commands")],
     "ru": [("invite", "одноразовый код приглашения"), ("codes", "неиспользованные коды"), ("users", "пользователи"),
            ("groupsheet", "общие таблицы"), ("course", "курс таблицы"), ("relayout", "разметить таблицу заново"),
-           ("status", "таблицы, пользователи, Haiku"), ("help", "команды")],
+           ("status", "таблицы, пользователи, Haiku"), ("interval", "как часто читать таблицы"),
+           ("help", "команды")],
 }
 
 
@@ -57,7 +59,7 @@ class Service:
             log.info("running as @%s", me.get("username"))
             bot = Bot(api, self.store, self.access, self.sheets, self.env.owner_id, self.env.zone,
                       me.get("username") or "")
-            poller = Poller(self.sheets, bot.grades, self.layouts)
+            poller = Poller(self.store, self.sheets, bot.grades, self.layouts)
             bot.poller, bot.budget = poller, self.budget
             poller.on_read, self.budget.notify = bot.after_read, bot.budget_notice
             await self.set_commands(api)

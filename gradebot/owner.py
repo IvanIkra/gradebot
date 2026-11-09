@@ -2,12 +2,13 @@
 
 Callbacks: `rq:<invite>` asks to revoke a code and `rv:<invite>` revokes it, `codes` and `users` redraw the lists,
 `du:<user>` asks to delete a user and `dy:<user>` deletes them, `nr:<user>` resets a user's full name, `gr:<sheet>`
-makes a group sheet an own one, `rl:<sheet>` lays a sheet out again, `st` redraws /status.
+makes a group sheet an own one, `rl:<sheet>` lays a sheet out again, `st` redraws /status, `iv:<minutes>` sets
+how often the sheets are read.
 """
 
 import logging
 
-from . import clock
+from . import clock, poller
 from .i18n import tr
 from .rich import Doc, b, code, i, link
 from .sheets import SheetError
@@ -33,6 +34,8 @@ class OwnerCommands:
             await self.cmd_relayout(chat, arg, lang)
         elif cmd == "/status":
             await self.api.send(chat, self.status_view(lang))
+        elif cmd == "/interval":
+            await self.cmd_interval(chat, arg, lang)
         else:
             await self.api.send(chat, self.owner_help(lang))
 
@@ -69,6 +72,11 @@ class OwnerCommands:
         elif kind == "st":
             await self.api.edit(chat, message_id, self.status_view(lang))
             return tr(lang, "Updated", "Обновлено")
+        elif kind == "iv" and number:
+            if not self.set_interval(number):
+                return None
+            await self.api.edit(chat, message_id, self.interval_view(lang))
+            return tr(lang, "Saved", "Сохранено")
         return None
 
     def owner_help(self, lang: str) -> Doc:
@@ -85,7 +93,9 @@ class OwnerCommands:
                             ["/relayout " + tr(lang, "<link>", "<ссылка>"),
                              tr(lang, "lay a sheet's tabs out again", "разметить вкладки таблицы заново")],
                             ["/status", tr(lang, "sheets, errors, users, Haiku spending",
-                                           "таблицы, ошибки, пользователи, расход Haiku")]]))
+                                           "таблицы, ошибки, пользователи, расход Haiku")],
+                            ["/interval " + tr(lang, "[minutes]", "[минуты]"),
+                             tr(lang, "how often the sheets are read", "как часто читать таблицы")]]))
 
     # --- invites ---------------------------------------------------------------------------------
 
@@ -235,12 +245,49 @@ class OwnerCommands:
             tr(lang, " is dropped: the sheet is read and laid out again now.",
                " сброшена: таблица сейчас будет прочитана и размечена заново.")))
 
+    # --- the interval ------------------------------------------------------------------------------
+
+    INTERVALS = (10, 15, 30, 60)    # the buttons of /interval; any other is typed
+
+    async def cmd_interval(self, chat: int, arg: str, lang: str) -> None:
+        if arg.strip():
+            minutes = int(arg.strip()) if arg.strip().isdigit() else 0
+            if not self.set_interval(minutes):
+                await self.api.send(chat, Doc().p(
+                    tr(lang, "Minutes from ", "Минуты от "), str(poller.MIN_MINUTES), tr(lang, " to ", " до "),
+                    str(poller.MAX_MINUTES), ": ", code("/interval 15")))
+                return
+        await self.api.send(chat, self.interval_view(lang))
+
+    def set_interval(self, minutes: int) -> bool:
+        """False for minutes out of range. The poller takes the new interval at once."""
+        try:
+            poller.set_interval(self.store, minutes)
+        except ValueError:
+            return False
+        if self.poller is not None:
+            self.poller.rescheduled()
+        return True
+
+    def interval_view(self, lang: str) -> Doc:
+        minutes = poller.interval(self.store)
+        doc = Doc().p(tr(lang, "The sheets are read every ", "Таблицы читаются раз в "),
+                      b(tr(lang, f"{minutes} minutes", f"{minutes} мин")), ". ",
+                      tr(lang, "A new grade comes within that time; each read downloads every followed sheet.",
+                         "Новая оценка приходит за это время; каждое чтение скачивает все таблицы с подписчиками."))
+        doc.p(tr(lang, "Another: ", "Другой: "), code("/interval 20"),
+              tr(lang, f", from {poller.MIN_MINUTES} to {poller.MAX_MINUTES}.",
+                 f", от {poller.MIN_MINUTES} до {poller.MAX_MINUTES}."))
+        return doc.buttons(*[(tr(lang, f"{m} min", f"{m} мин"), f"iv:{m}") for m in self.INTERVALS if m != minutes])
+
     # --- status ----------------------------------------------------------------------------------
 
     def status_view(self, lang: str) -> Doc:
         """Sheets with their errors, users, and what Haiku cost today and this month."""
         sheets = self.sheets.every()
-        doc = Doc().h(tr(lang, "Sheets", "Таблицы") + f" · {len(sheets)}")
+        minutes = poller.interval(self.store)
+        doc = Doc().h(tr(lang, "Sheets", "Таблицы") + f" · {len(sheets)}").p(
+            tr(lang, f"Read every {minutes} minutes: ", f"Читаются раз в {minutes} мин: "), "/interval")
         if sheets:
             never = tr(lang, "never", "ни разу")
             doc.table([tr(lang, "Sheet", "Таблица"), tr(lang, "Followers", "Подписаны"),

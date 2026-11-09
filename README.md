@@ -1,8 +1,8 @@
 # gradebot
 
 A Telegram bot that sends a small group of friends their new grades from the Google Sheets of their courses. Each
-user sets their full name as the sheets have it and picks the sheets; the bot reads them every 30 minutes and sends
-new and changed grades to a private chat.
+user sets their full name as the sheets have it and picks the sheets; the bot reads them every 30 minutes (the owner may
+change it) and sends new and changed grades to a private chat.
 
 Access is by one-time invite codes from the owner. There is no sign-up and no public web part: the bot only talks
 to the Bot API by long polling.
@@ -30,14 +30,16 @@ to the Bot API by long polling.
 | owner | `/course <link> <course>` | a sheet's course, the short name in front of its works (up to 10 characters) |
 | owner | `/relayout <link>` | drop a sheet's cached layout: its tabs are laid out again at once |
 | owner | `/status` | sheets and their errors, users, Haiku spending today and this month |
+| owner | `/interval [minutes]` | how often the sheets are read: 30 minutes by default, 5 to 240 |
 
 A sheet is stored once for everyone who follows it, so it is downloaded and laid out once.
 
 ## How grades are read
 
-Every 30 minutes each sheet with at least one follower is downloaded as xlsx and parsed once; every follower's row
-is looked for by their full name (case, "ё" and punctuation don't matter, the name matches the start of a cell). A
-name that matches two rows of one tab is an error: the user makes it longer.
+Every 30 minutes (the owner may change it with `/interval`) each sheet with at least one follower is downloaded as
+xlsx and parsed once; every follower's row is looked for by their full name (case, "ё" and punctuation don't
+matter, the name matches the start of a cell). A name that matches two rows of one tab is an error: the user makes
+it longer.
 
 Claude Haiku lays out each tab once for all followers: which top rows are the header, which columns are graded works,
 their maximum points, a bonus column and a short label. The layout is cached while the header rows keep their text.

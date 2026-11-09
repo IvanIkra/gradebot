@@ -1,10 +1,11 @@
 """Reading the sheets (spec §5.1).
 
-Every 30 minutes each sheet that has a reader (a follower with a full name who has not blocked the bot) is
-downloaded as xlsx once, its title fetched once from the HTML view, the workbook parsed once, and every reader's rows
-looked for in it. Each tab with a reader's row is laid out once for all of them (layout.py), then each reader's
-grades are recorded (grades.py). A new follower or a new full name asks for a read at once (`request`): only those
-sheets are read then, and the users who asked are told how it went.
+Every interval (30 minutes unless the owner sets another with /interval) each sheet that has a reader (a follower
+with a full name who has not blocked the bot) is downloaded as xlsx once, its title fetched once from the HTML
+view, the workbook parsed once, and every reader's rows looked for in it. Each tab with a reader's row is laid out
+once for all of them (layout.py), then each reader's grades are recorded (grades.py). A new follower or a new full
+name asks for a read at once (`request`): only those sheets are read then, and the users who asked are told how it
+went.
 
 A sheet fails as a whole on the download, on a file that is no workbook (a sheet closed to the link gives a login
 page) and on the layout (the network, the limit); its grades stay as they were, and it is read again at the next
@@ -28,17 +29,33 @@ from .layout import Layouts
 from .llm.budget import BudgetExceeded
 from .llm.client import LLMError
 from .sheets import Sheets, course_of
+from .store import Store
 
 log = logging.getLogger(__name__)
 
 EXPORT_URL = "https://docs.google.com/spreadsheets/d/{id}/export?format=xlsx"
 TITLE_URL = "https://docs.google.com/spreadsheets/d/{id}/htmlview"
-POLL_EVERY = 30 * 60        # seconds
+INTERVAL = "poll.minutes"   # kv: how often the sheets are read, set by the owner
+DEFAULT_MINUTES = 30
+MIN_MINUTES, MAX_MINUTES = 5, 240
+MINUTE = 60                 # seconds; tests make it shorter
 TIMEOUT = 120               # seconds for a download
 
 # Errors are kept as "<kind>: <detail>"; the kinds are what the bot explains to a user.
 DOWNLOAD, CLOSED, LAYOUT, BUDGET = "download", "closed", "layout", "budget"   # of a sheet
 NO_ROW, AMBIGUOUS = "no_row", "ambiguous"                                     # of a user's rows
+
+
+def interval(store: Store) -> int:
+    """Minutes between the reads of every sheet."""
+    return store.get_json(INTERVAL, DEFAULT_MINUTES)
+
+
+def set_interval(store: Store, minutes: int) -> None:
+    """ValueError for minutes out of MIN_MINUTES..MAX_MINUTES."""
+    if not MIN_MINUTES <= minutes <= MAX_MINUTES:
+        raise ValueError(f"from {MIN_MINUTES} to {MAX_MINUTES} minutes")
+    store.put_json(INTERVAL, minutes)
 
 
 @dataclass
@@ -62,14 +79,14 @@ class SheetRead:
 
 
 class Poller:
-    def __init__(self, sheets: Sheets, grades: Grades, layouts: Layouts):
-        self.sheets, self.grades, self.layouts = sheets, grades, layouts
+    def __init__(self, store: Store, sheets: Sheets, grades: Grades, layouts: Layouts):
+        self.store, self.sheets, self.grades, self.layouts = store, sheets, grades, layouts
         self.on_read: Callable[[list[SheetRead]], Awaitable[None]] | None = None  # after every poll
         self._pending: dict[int, set[int]] = {}     # sheet -> users waiting for its outcome
         self._wake = asyncio.Event()
 
     def request(self, sheet: int, tg_id: int | None = None) -> None:
-        """Read a sheet now, not in 30 minutes; `tg_id` is told how it went."""
+        """Read a sheet now, not at the next poll; `tg_id` is told how it went."""
         self._pending.setdefault(sheet, set()).update([tg_id] if tg_id is not None else [])
         self._wake.set()
 
@@ -78,19 +95,27 @@ class Poller:
         self.layouts.forget(sheet["sheet_id"])
         self.request(sheet["id"])
 
+    def rescheduled(self) -> None:
+        """The interval changed: the next poll is counted from the last one with the new interval."""
+        self._wake.set()
+
     async def run(self) -> None:
+        """A poll of every sheet each interval, counted from the start of the last one; requested sheets between
+        them. A read on request does not move the schedule."""
         loop = asyncio.get_running_loop()
-        next_full = loop.time()
+        last = None
         while True:
-            full = loop.time() >= next_full
+            full = last is None or loop.time() - last >= interval(self.store) * MINUTE
             if full:
-                next_full = loop.time() + POLL_EVERY
-            try:
-                await self.poll(full)
-            except Exception:
-                log.exception("grades poll failed")
+                last = loop.time()
+            if full or self._pending:
+                try:
+                    await self.poll(full)
+                except Exception:
+                    log.exception("grades poll failed")
+            wait = max(0.0, last + interval(self.store) * MINUTE - loop.time())
             try:  # cleared after waking, not before: a request during a poll gives one more poll
-                await asyncio.wait_for(self._wake.wait(), max(0.0, next_full - loop.time()))
+                await asyncio.wait_for(self._wake.wait(), wait)
             except TimeoutError:
                 pass
             self._wake.clear()

@@ -9,7 +9,7 @@ from gradebot.poller import Poller
 
 from .books import ANNA, IVAN, URL
 from .books import workbook as book
-from .conftest import OWNER, add_user, buttons, message
+from .conftest import OWNER, add_user, buttons, callback, message
 
 
 @pytest.fixture
@@ -39,8 +39,8 @@ async def google(aiohttp_server, monkeypatch):
 
 
 @pytest.fixture
-def poller(bot, sheets, layouts):
-    p = Poller(sheets, bot.grades, layouts)
+def poller(bot, store, sheets, layouts):
+    p = Poller(store, sheets, bot.grades, layouts)
     bot.poller, p.on_read = p, bot.after_read
     return p
 
@@ -202,3 +202,51 @@ async def test_a_name_changed_during_the_read_records_nothing(google, poller, tw
     layouts.get = slow
     [read] = await poller.poll()
     assert bot.grades.items(1, two) == [] and bot.grades.items(2, two)
+
+
+async def test_the_owner_sets_the_interval(bot, api, poller, store):
+    from gradebot.poller import interval
+
+    await bot.handle(message(OWNER, "/interval"))
+    view = api.last(OWNER)
+    assert "раз в <b>30 мин</b>" in view["text"]
+    assert buttons(view) == {"10 мин": "iv:10", "15 мин": "iv:15", "60 мин": "iv:60"}
+    await bot.handle(callback(OWNER, "iv:15", message_id=77))
+    assert interval(store) == 15 and api.last(OWNER)["method"] == "editMessageText"
+    assert "iv:30" in api.last(OWNER)["text"]
+    await bot.handle(message(OWNER, "/interval 20"))
+    assert interval(store) == 20
+    for wrong in ("/interval 2", "/interval 500", "/interval often"):
+        await bot.handle(message(OWNER, wrong))
+        assert "Минуты от 5 до 240" in api.last(OWNER)["text"] and interval(store) == 20
+    await bot.handle(callback(OWNER, "iv:1"))
+    assert interval(store) == 20
+    await bot.handle(message(1, "/interval 5"))  # a stranger: no
+    assert interval(store) == 20
+
+
+async def test_a_new_interval_applies_at_once_and_requests_keep_the_schedule(poller, store, monkeypatch):
+    import asyncio
+
+    from gradebot import poller as module
+
+    monkeypatch.setattr(module, "MINUTE", 0.02)    # 30 "minutes" is 0.6 s
+    polls = []
+
+    async def poll(full=True):
+        polls.append(full)
+        poller._pending = {}
+        return []
+
+    poller.poll = poll
+    task = asyncio.create_task(poller.run())
+    await asyncio.sleep(0.1)
+    assert polls == [True]                      # the first poll at once, the next in 0.6 s
+    poller.request(1)
+    await asyncio.sleep(0.05)
+    assert polls == [True, False]               # the request alone, the schedule kept
+    module.set_interval(store, 5)               # 0.1 s
+    poller.rescheduled()
+    await asyncio.sleep(0.3)
+    task.cancel()
+    assert polls[:2] == [True, False] and polls.count(True) >= 3
