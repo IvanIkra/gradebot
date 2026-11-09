@@ -1,0 +1,21 @@
+# docker compose up -d --build
+# The bot only polls the Bot API, so no port is published. DNS is set explicitly for hosts whose routing
+# breaks the default container DNS.
+services:
+  gradebot:
+    build: .
+    image: gradebot:latest
+    container_name: gradebot
+    restart: unless-stopped
+    dns:
+      - ${CONTAINER_DNS_1:-1.1.1.1}
+      - ${CONTAINER_DNS_2:-9.9.9.9}
+    env_file: .env
+    volumes:
+      - ./data:/app/data
+    mem_limit: 192m
+    logging:
+      driver: json-file
+      options:
+        max-size: 5m
+        max-file: "3"

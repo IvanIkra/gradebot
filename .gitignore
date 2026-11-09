@@ -1,0 +1,13 @@
+__pycache__/
+*.pyc
+.venv/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.DS_Store
+
+# Secrets
+.env
+
+# Runtime state: the SQLite database
+data/
