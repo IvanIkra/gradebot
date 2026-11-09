@@ -34,6 +34,9 @@ to the Bot API by long polling.
 | owner | `/status` | sheets and their errors, users, Haiku spending today and this month |
 | owner | `/interval [minutes]` | how often the sheets are read: 30 minutes by default, 5 to 240 |
 
+A command sent without its arguments, as the command menu sends it, asks for them one by one: buttons for the usual
+answers, a button to leave an optional one empty, and Cancel. A command typed with its arguments runs at once.
+
 A sheet is stored once for everyone who follows it, so it is downloaded and laid out once.
 
 ## How grades are read

@@ -16,10 +16,11 @@ import re
 
 from . import clock, poller
 from .access import MEMBER, TRUSTED
-from .groups import GroupError
+from .dialog import Step, asks_hint, link_step
+from .groups import GroupError, group_name
 from .i18n import tr
 from .rich import Doc, b, code, i, link
-from .sheets import SheetError
+from .sheets import SheetError, course
 from .sheets import name as sheet_name
 from .telegram import TelegramError
 
@@ -29,7 +30,7 @@ log = logging.getLogger(__name__)
 class OwnerCommands:
     async def owner_command(self, chat: int, cmd: str, arg: str, lang: str) -> None:
         if cmd == "/invite":
-            await self.api.send(chat, self.invite_view(arg, lang))
+            await self.cmd_invite(chat, arg, lang)
         elif cmd == "/codes":
             await self.api.send(chat, self.codes_view(lang))
         elif cmd == "/users":
@@ -102,6 +103,13 @@ class OwnerCommands:
             return await self.reset_name(chat, message_id, number, lang)
         elif kind == "groups":
             await self.api.edit(chat, message_id, self.groups_view(lang))
+        elif kind == "gsa":
+            await self.add_group_sheet(chat, {"group": arg} if number else {}, lang)
+        elif kind == "gn":
+            await self.flow(chat, lang, [self.group_name_step(lang)], lambda data: self.make_group(chat, data, lang))
+        elif kind == "gm" and number:
+            await self.flow(chat, lang, [self.group_name_step(lang, number)],
+                            lambda data: self.rename_group(chat, number, data["name"], lang))
         elif kind == "gs" and number:
             await self.api.edit(chat, message_id, self.group_view(lang, number))
         elif kind == "gr":
@@ -159,18 +167,81 @@ class OwnerCommands:
                             ["/status", tr(lang, "sheets, errors, users, Haiku spending",
                                            "таблицы, ошибки, пользователи, расход Haiku")],
                             ["/interval " + tr(lang, "[minutes]", "[минуты]"),
-                             tr(lang, "how often the sheets are read", "как часто читать таблицы")]]))
+                             tr(lang, "how often the sheets are read", "как часто читать таблицы")]])
+                .p(asks_hint(lang)))
 
     # --- invites ---------------------------------------------------------------------------------
 
-    def invite_view(self, arg: str, lang: str) -> Doc:
-        """`/invite [group] [x5|x*] [3d|12h] [+30d|+31.12] [note]`, in any order: see `invite_args`."""
+    async def cmd_invite(self, chat: int, arg: str, lang: str) -> None:
+        """`/invite [group] [x5|x*] [3d|12h] [+30d|+31.12] [note]`, in any order (see `invite_args`): what is not
+        typed is the default. Without arguments each is asked for, with buttons."""
         if arg.strip().lower() in ("help", "?", "помощь"):
-            return self.invite_help(lang)
-        try:
-            args = invite_args(arg, self.groups.find, self.now(), self.zone)
-        except ValueError:
-            return self.invite_help(lang)
+            await self.api.send(chat, self.invite_help(lang))
+        elif arg.strip():
+            try:
+                args = invite_args(arg, self.groups.find, self.now(), self.zone)
+            except ValueError:
+                await self.api.send(chat, self.invite_help(lang))
+                return
+            await self.api.send(chat, self.make_invite(args, lang))
+        else:
+            await self.flow(chat, lang, self.invite_steps(lang), lambda data: self.invite_asked(chat, data, lang))
+
+    def invite_steps(self, lang: str) -> list[Step]:
+        def token(kind: str, fix):
+            def check(value: str, data: dict) -> str:
+                word = fix(value.strip().lower().replace(" ", ""))
+                found = invite_args(word, lambda _: None, self.now(), self.zone)
+                found["access_any"] = found["access_days"] or found["access_until"]
+                if found["note"] or (kind != "uses" and not found[kind]):  # not this kind of word
+                    raise ValueError(value)
+                return word
+            return check
+
+        def plain(text: str):
+            return lambda data: Doc().p(text)
+
+        people = tr(lang, "A number from 1 to 1000, or x* for any number.",
+                    "Число от 1 до 1000 или x* — сколько угодно.")
+        days = tr(lang, "Like 3d or 12h, up to 365 days.", "Например 3д или 12ч, до 365 дней.")
+        access = tr(lang, "Like +30d, or a date: +31.12.", "Например +30д или дата: +31.12.")
+        return [
+            self.group_step(lang, tr(lang, "No group: they pick one", "Без группы: выберет сам")),
+            Step("people", plain(tr(lang, "How many people may come in with the code? ",
+                                    "Сколько человек может войти по коду? ") + people),
+                 check=token("uses", lambda v: v if v.startswith(("x", "х")) else f"x{v}"),
+                 error=lambda lang, e: people,
+                 choices=lambda data: [("1", "x1"), ("5", "x5"), ("10", "x10"), ("30", "x30"),
+                                       (tr(lang, "Any number", "Сколько угодно"), "x*")]),
+            Step("lifetime", plain(tr(lang, "How long does the code work? ", "Сколько действует код? ") + days),
+                 check=token("lifetime", lambda v: f"{v}{tr(lang, 'd', 'д')}" if v.isdigit() else v),
+                 error=lambda lang, e: days,
+                 choices=lambda data: [(tr(lang, "1 day", "1 день"), "1d"), (tr(lang, "3 days", "3 дня"), "3d"),
+                                       (tr(lang, "30 days", "30 дней"), "30d")],
+                 skip=lambda data: tr(lang, f"{self.access.invite_days} days", f"{self.access.invite_days} дн.")),
+            Step("access", plain(tr(lang, "How long does the access last? ", "На сколько открыть доступ? ") + access),
+                 check=token("access_any", lambda v: v if v.startswith("+") else
+                             f"+{v}{tr(lang, 'd', 'д')}" if v.isdigit() else f"+{v}"),
+                 error=lambda lang, e: access,
+                 choices=lambda data: [(tr(lang, "30 days", "30 дней"), "+30d"),
+                                       (tr(lang, "90 days", "90 дней"), "+90d")],
+                 skip=lambda data: tr(lang, "For good", "Бессрочно")),
+            Step("note", plain(tr(lang, "A note for yourself: who the code is for.",
+                                  "Пометка для себя: для кого код.")),
+                 skip=lambda data: tr(lang, "No note", "Без пометки")),
+        ]
+
+    async def invite_asked(self, chat: int, data: dict, lang: str) -> None:
+        words = " ".join(data.get(name, "") for name in ("people", "lifetime"))
+        args = invite_args(words, lambda _: None, self.now(), self.zone)
+        if data.get("access"):
+            access = invite_args(data["access"], lambda _: None, self.now(), self.zone)
+            args["access_days"], args["access_until"] = access["access_days"], access["access_until"]
+        args["group"] = self.groups.get(int(data["group"])) if data.get("group") else None
+        args["note"] = data.get("note", "")
+        await self.api.send(chat, self.make_invite(args, lang))
+
+    def make_invite(self, args: dict, lang: str) -> Doc:
         group = args.pop("group")
         invite_id, new = self.access.invite(group=group["id"] if group else None, **args)
         invite = next(inv for inv in self.access.open_invites() if inv["id"] == invite_id)
@@ -186,6 +257,42 @@ class OwnerCommands:
             doc.p(link(url, url))
         return doc.p(i(tr(lang, "Only its hash is kept: this is the only time the code is shown.",
                           "Хранится только хэш: код показан один раз.")))
+
+    def group_step(self, lang: str, skip: str | None = None) -> Step:
+        """A group: a button for each, or its name typed. Asked only when there are groups."""
+        def check(value: str, data: dict) -> str:
+            group = self.groups.get(int(value)) if value.isdigit() else self.groups.find(value)
+            if group is None:
+                raise ValueError(value)
+            return str(group["id"])
+
+        return Step("group", lambda data: Doc().p(tr(lang, "Which group?", "Какая группа?")), check=check,
+                    error=lambda lang, e: tr(lang, "No such group.", "Такой группы нет."),
+                    choices=lambda data: [(g["name"], str(g["id"])) for g in self.groups.all()],
+                    skip=lambda data: skip, when=lambda data: bool(self.groups.all()))
+
+    def sheet_step(self, lang: str) -> Step:
+        """A sheet the bot reads: a button for each, or its link."""
+        def check(value: str, data: dict) -> str:
+            sheet = self.sheets.get(int(value[1:])) if value.startswith("#") and value[1:].isdigit() else \
+                self.sheets.by_url(value)
+            if sheet is None:
+                raise ValueError(value)
+            return sheet["url"]
+
+        return Step("link", lambda data: Doc().p(tr(lang, "Which sheet? A button, or its link.",
+                                                    "Какая таблица? Кнопка или ссылка.")), check=check,
+                    error=lambda lang, e: tr(lang, "The bot reads no such sheet.", "Бот не читает такую таблицу."),
+                    choices=lambda data: [(sheet_name(s), f"#{s['id']}") for s in self.sheets.every()[:24]])
+
+    def short_name_step(self, lang: str, skip) -> Step:
+        return Step("name", lambda data: Doc().p(
+                        tr(lang, "A short name, up to 10 characters; it is the sheet's hashtag too. ",
+                           "Короткое имя, до 10 символов; оно же хэштег таблицы. "), self.no_course(lang)),
+                    check=lambda value, data: course(value),
+                    error=lambda lang, e: tr(lang, "A short name has at most 10 characters.",
+                                             "В коротком имени не больше 10 символов."),
+                    skip=skip)
 
     def invite_help(self, lang: str) -> Doc:
         rows = [["x5", tr(lang, "up to 5 people; x* any number until it expires or is revoked; one by default",
@@ -420,47 +527,58 @@ class OwnerCommands:
     async def cmd_groups(self, chat: int, arg: str, lang: str) -> None:
         """`/groups` lists them, `/groups <name>` makes one, `/groups <name> <new name>` renames one."""
         words = arg.split()
-        try:
-            if len(words) == 1:
-                group = self.groups.create(words[0])
-                await self.api.send(chat, Doc().p(
-                    tr(lang, "Group ", "Группа "), b(group["name"]), tr(lang, " is made. Its sheets: ", " создана. "
-                                                                         "Её таблицы: "),
-                    code(tr(lang, f"/groupsheet {group['name']} <link> [short name]",
-                            f"/groupsheet {group['name']} <ссылка> [имя]")),
-                    tr(lang, "; a code to it: ", "; код в неё: "), code(f"/invite {group['name']}")))
+        if len(words) == 1:
+            await self.flow(chat, lang, [self.group_name_step(lang)], lambda data: self.make_group(chat, data, lang),
+                            {"name": words[0]})
+        elif len(words) == 2:
+            group = self.groups.find(words[0])
+            if group is None:
+                await self.api.send(chat, tr(lang, "No such group.", "Такой группы нет."))
                 return
-            if len(words) == 2:
-                group = self.groups.find(words[0])
-                if group is None:
-                    await self.api.send(chat, tr(lang, "No such group.", "Такой группы нет."))
-                    return
-                group = self.groups.rename(group["id"], words[1])
-                await self.api.send(chat, Doc().p(tr(lang, "Renamed: ", "Переименована: "), b(group["name"]), "."))
-                return
-        except GroupError as e:
-            await self.api.send(chat, tr(lang, "There is such a group already.", "Такая группа уже есть.")
-                                if "exists" in str(e) else
-                                tr(lang, "A group's name is one word, up to 20 characters.",
-                                   "Имя группы — одно слово, до 20 символов."))
-            return
-        await self.api.send(chat, self.groups_view(lang))
+            await self.flow(chat, lang, [self.group_name_step(lang, group["id"])],
+                            lambda data: self.rename_group(chat, group["id"], data["name"], lang), {"name": words[1]})
+        else:
+            await self.api.send(chat, self.groups_view(lang))
+
+    def group_name_step(self, lang: str, gid: int | None = None) -> Step:
+        """A new group's name, or a new name of the group `gid`."""
+        def check(value: str, data: dict) -> str:
+            name = group_name(value)
+            found = self.groups.find(name)
+            if found is not None and found["id"] != gid:
+                raise GroupError("a group with this name exists")
+            return name
+
+        return Step("name", lambda data: Doc().p(tr(lang, "The group's name: one word, up to 20 characters.",
+                                                    "Имя группы: одно слово, до 20 символов.")), check=check,
+                    error=lambda lang, e: tr(lang, "There is such a group already.", "Такая группа уже есть.")
+                    if "exists" in str(e) else tr(lang, "A group's name is one word, up to 20 characters.",
+                                                  "Имя группы — одно слово, до 20 символов."))
+
+    async def make_group(self, chat: int, data: dict, lang: str) -> None:
+        group = self.groups.create(data["name"])
+        await self.api.send(chat, Doc().p(
+            tr(lang, "Group ", "Группа "), b(group["name"]), tr(lang, " is made. ", " создана. "),
+            tr(lang, "A code to it: ", "Код в неё: "), code(f"/invite {group['name']}"), ".")
+            .buttons((tr(lang, "Add a sheet", "Добавить таблицу"), f"gsa:{group['id']}")))
+
+    async def rename_group(self, chat: int, gid: int, name: str, lang: str) -> None:
+        group = self.groups.rename(gid, name)
+        await self.api.send(chat, Doc().p(tr(lang, "Renamed: ", "Переименована: "), b(group["name"]), "."))
 
     def groups_view(self, lang: str) -> Doc:
         groups = self.groups.all()
         if not groups:
-            return Doc().p(tr(lang, "No groups yet: ", "Групп пока нет: "),
-                           code(tr(lang, "/groups <name>", "/groups <имя>")))
+            return Doc().p(tr(lang, "No groups yet.", "Групп пока нет.")).buttons(
+                (tr(lang, "New group", "Новая группа"), "gn", "primary"))
         doc = Doc().h(tr(lang, "Groups", "Группы") + f" · {len(groups)}").table(
             [tr(lang, "Group", "Группа"), tr(lang, "Users", "Пользователей"), tr(lang, "Sheets", "Таблиц")],
             [[g["name"], str(g["users"]), str(g["sheets"])] for g in groups], [None, "right", "right"])
-        doc.p(tr(lang, "A new one: ", "Новая: "), code(tr(lang, "/groups <name>", "/groups <имя>")),
-              tr(lang, "; a new name: ", "; переименовать: "),
-              code(tr(lang, "/groups <name> <new name>", "/groups <имя> <новое имя>")), ".")
         for g in groups[:30]:
             doc.buttons((tr(lang, "Sheets: ", "Таблицы: ") + g["name"], f"gs:{g['id']}"),
+                        (tr(lang, "Rename ", "Переименовать ") + g["name"], f"gm:{g['id']}"),
                         (tr(lang, "Delete ", "Удалить ") + g["name"], f"gd:{g['id']}", "danger"))
-        return doc
+        return doc.buttons((tr(lang, "New group", "Новая группа"), "gn", "primary"))
 
     def delete_group_view(self, gid: int, lang: str) -> Doc:
         group = next((g for g in self.groups.all() if g["id"] == gid), None)
@@ -473,30 +591,39 @@ class OwnerCommands:
                          (tr(lang, "Cancel", "Отмена"), "groups")))
 
     async def cmd_groupsheet(self, chat: int, arg: str, lang: str) -> None:
-        """`/groupsheet` lists every group's sheets, `/groupsheet <group>` one group's, and
-        `/groupsheet [group] <link> [short name]` gives a group a sheet; the group may be left out when there is one."""
-        words, groups = arg.split(), self.groups.all()
+        """`/groupsheet` lists every group's sheets, `/groupsheet <group>` one group's, both with a button to add
+        one; `/groupsheet [group] <link> [short name]` gives a group a sheet, the missing ones asked for."""
+        words = arg.split()
         group = self.groups.find(words[0]) if words else None
         if group is not None:
             words = words[1:]
-        elif words and len(groups) == 1:
-            group = groups[0]
         if not words:
             await self.api.send(chat, self.group_view(lang, group["id"]) if group else self.every_group_view(lang))
             return
+        data = {"link": words[0], **({"name": " ".join(words[1:])} if words[1:] else {})}
+        await self.add_group_sheet(chat, {**data, **({"group": str(group["id"])} if group else {})}, lang)
+
+    async def add_group_sheet(self, chat: int, data: dict, lang: str) -> None:
+        groups = self.groups.all()
+        if not groups:
+            await self.api.send(chat, self.every_group_view(lang))
+            return
+        if len(groups) == 1:
+            data = {"group": str(groups[0]["id"]), **data}
+
+        def skip(data: dict) -> str:
+            known = self.sheets.by_url(data["link"])
+            return tr(lang, "Keep ", "Оставить ") + f"«{known['course']}»" if known and known["course"] else \
+                tr(lang, "Title from Google", "Название из Google")
+
+        steps = [self.group_step(lang), link_step(lang), self.short_name_step(lang, skip)]
+        await self.flow(chat, lang, steps, lambda data: self.group_sheet_added(chat, data, lang), data)
+
+    async def group_sheet_added(self, chat: int, data: dict, lang: str) -> None:
+        group = self.groups.get(int(data["group"]))
         if group is None:
-            await self.api.send(chat, Doc().p(
-                tr(lang, "Which group? ", "Какой группе? "),
-                code(tr(lang, "/groupsheet <group> <link> [short name]", "/groupsheet <группа> <ссылка> [имя]")),
-                ". ", tr(lang, "Groups: ", "Группы: ") if groups else tr(lang, "Make one first: ", "Сначала создай: "),
-                ", ".join(g["name"] for g in groups) if groups else code(tr(lang, "/groups <name>", "/groups <имя>"))))
             return
-        url, course = words[0], " ".join(words[1:])
-        try:
-            sheet, added = self.groups.add_sheet(group["id"], url, self.owner_id, course or None)
-        except SheetError as e:
-            await self.api.send(chat, self.sheet_error(e, lang))
-            return
+        sheet, added = self.groups.add_sheet(group["id"], data["link"], self.owner_id, data.get("name") or None)
         doc = Doc().p(
             tr(lang, "Shared sheet ", "Общая таблица "), b(sheet_name(sheet)), tr(lang, " of the group ", " группы "),
             b(group["name"]), ". ", tr(lang, f"Users who started to follow it: {added}.",
@@ -507,24 +634,26 @@ class OwnerCommands:
     def every_group_view(self, lang: str) -> Doc:
         groups = self.groups.all()
         if not groups:
-            return Doc().p(tr(lang, "No groups yet: ", "Групп пока нет: "),
-                           code(tr(lang, "/groups <name>", "/groups <имя>")))
+            return Doc().p(tr(lang, "No groups yet: make one first in /groups.",
+                              "Групп пока нет: сначала создай группу в /groups.")).buttons(
+                (tr(lang, "New group", "Новая группа"), "gn", "primary"))
         doc = Doc()
         for g in groups:
-            self.group_view(lang, g["id"], doc)
-        return doc
+            self.group_view(lang, g["id"], doc, add=False)
+        return doc.buttons((tr(lang, "Add a sheet", "Добавить таблицу"), "gsa", "primary"))
 
-    def group_view(self, lang: str, gid: int, doc: Doc | None = None) -> Doc:
-        """A group's sheets with a button to take each from it; added to `doc` when given."""
+    def group_view(self, lang: str, gid: int, doc: Doc | None = None, add: bool = True) -> Doc:
+        """A group's sheets with a button to take each from it, and one to add a sheet; added to `doc` when
+        given."""
         group, doc = self.groups.get(gid), doc if doc is not None else Doc()
         if group is None:
             return self.groups_view(lang)
         sheets = self.groups.sheets_of(gid)
         doc.h(tr(lang, "Group ", "Группа ") + f"{group['name']} · {len(sheets)}")
+        add_button = (tr(lang, "Add a sheet to ", "Добавить таблицу в ") + group["name"], f"gsa:{gid}", "primary")
         if not sheets:
-            return doc.p(tr(lang, "No shared sheets yet: ", "Общих таблиц пока нет: "),
-                         code(tr(lang, f"/groupsheet {group['name']} <link> [short name]",
-                                 f"/groupsheet {group['name']} <ссылка> [имя]")))
+            doc.p(tr(lang, "No shared sheets yet.", "Общих таблиц пока нет."))
+            return doc.buttons(add_button) if add else doc
         doc.table(
             [tr(lang, "Sheet", "Таблица"), tr(lang, "Short name", "Имя"), tr(lang, "Followers", "Подписаны")],
             [[link(s["title"] or s["sheet_id"][-6:], s["url"]), s["course"] or "—", str(s["followers"])]
@@ -532,20 +661,19 @@ class OwnerCommands:
         off = tr(lang, "Not shared: ", "Убрать из общих: ")
         for s in sheets:
             doc.buttons((off + sheet_name(s), f"gr:{gid}.{s['id']}", "danger"))
-        return doc
+        return doc.buttons(add_button) if add else doc
 
     async def cmd_rename(self, chat: int, arg: str, lang: str) -> None:
-        """`/rename <link> [short name]`: the sheet's short name and hashtag (its `course`) for all its followers."""
-        url, _, course = arg.partition(" ")
-        if not url:
-            await self.api.send(chat, Doc().p(code(tr(lang, "/rename <link> [short name]", "/rename <ссылка> [имя]")))
-                                .p(self.no_course(lang)))
-            return
-        try:
-            sheet = self.sheets.set_course(url, course)
-        except SheetError as e:
-            await self.api.send(chat, self.sheet_error(e, lang))
-            return
+        """`/rename <link> [short name]`: the sheet's short name and hashtag (its `course`) for all its followers;
+        the missing ones asked for."""
+        url, _, name = arg.strip().partition(" ")
+        data = {"link": url, **({"name": name.strip()} if name.strip() else {})} if url else {}
+        steps = [self.sheet_step(lang),
+                 self.short_name_step(lang, lambda data: tr(lang, "Title from Google", "Название из Google"))]
+        await self.flow(chat, lang, steps, lambda data: self.renamed(chat, data, lang), data)
+
+    async def renamed(self, chat: int, data: dict, lang: str) -> None:
+        sheet = self.sheets.set_course(data["link"], data.get("name", ""))
         await self.api.send(chat, Doc().p(tr(lang, "Short name: ", "Имя: "), b(sheet["course"]), ".")
                             if sheet["course"] else
                             Doc().p(tr(lang, "No short name. ", "Короткого имени нет. "), self.no_course(lang)))
@@ -558,15 +686,13 @@ class OwnerCommands:
                   "названия.")
 
     async def cmd_relayout(self, chat: int, arg: str, lang: str) -> None:
-        try:
-            sheet = self.sheets.by_url(arg.split()[0]) if arg.strip() else None
-        except SheetError as e:
-            await self.api.send(chat, self.sheet_error(e, lang))
-            return
-        if sheet is None:
-            await self.api.send(chat, Doc().p(code(tr(lang, "/relayout <link>", "/relayout <ссылка>")), " — ",
-                                              tr(lang, "a sheet somebody follows.", "таблица, на которую подписаны.")))
-            return
+        """`/relayout <link>`, or the sheet asked for."""
+        url = arg.split()[0] if arg.strip() else ""
+        await self.flow(chat, lang, [self.sheet_step(lang)], lambda data: self.relaid(chat, data, lang),
+                        {"link": url} if url else None)
+
+    async def relaid(self, chat: int, data: dict, lang: str) -> None:
+        sheet = self.sheets.by_url(data["link"])
         if self.poller is not None:
             self.poller.relayout(sheet)
         await self.api.send(chat, Doc().p(
@@ -579,14 +705,21 @@ class OwnerCommands:
     INTERVALS = (10, 15, 30, 60)    # the buttons of /interval; any other is typed
 
     async def cmd_interval(self, chat: int, arg: str, lang: str) -> None:
-        if arg.strip():
-            minutes = int(arg.strip()) if arg.strip().isdigit() else 0
-            if not self.set_interval(minutes):
-                await self.api.send(chat, Doc().p(
-                    tr(lang, "Minutes from ", "Минуты от "), str(poller.MIN_MINUTES), tr(lang, " to ", " до "),
-                    str(poller.MAX_MINUTES), ": ", code("/interval 15")))
-                return
-        await self.api.send(chat, self.interval_view(lang))
+        """`/interval 15`, or the interval now with buttons, and another one typed."""
+        def check(value: str, data: dict) -> str:
+            if not value.isdigit() or not poller.MIN_MINUTES <= int(value) <= poller.MAX_MINUTES:
+                raise ValueError(value)
+            return value
+
+        async def done(data: dict) -> None:
+            self.set_interval(int(data["minutes"]))
+            await self.api.send(chat, self.interval_view(lang))
+
+        step = Step("minutes", lambda data: self.interval_view(lang), check=check,
+                    error=lambda lang, e: tr(lang, f"Minutes from {poller.MIN_MINUTES} to {poller.MAX_MINUTES}.",
+                                             f"Минуты от {poller.MIN_MINUTES} до {poller.MAX_MINUTES}."),
+                    cancel=False)
+        await self.flow(chat, lang, [step], done, {"minutes": arg.strip()} if arg.strip() else None)
 
     def set_interval(self, minutes: int) -> bool:
         """False for minutes out of range. The poller takes the new interval at once."""
@@ -604,9 +737,9 @@ class OwnerCommands:
                       b(tr(lang, f"{minutes} minutes", f"{minutes} мин")), ". ",
                       tr(lang, "A new grade comes within that time; each read downloads every followed sheet.",
                          "Новая оценка приходит за это время; каждое чтение скачивает все таблицы с подписчиками."))
-        doc.p(tr(lang, "Another: ", "Другой: "), code("/interval 20"),
-              tr(lang, f", from {poller.MIN_MINUTES} to {poller.MAX_MINUTES}.",
-                 f", от {poller.MIN_MINUTES} до {poller.MAX_MINUTES}."))
+        doc.p(tr(lang, "Another: send the minutes, ", "Другой — пришли минуты, "),
+              tr(lang, f"from {poller.MIN_MINUTES} to {poller.MAX_MINUTES}.",
+                 f"от {poller.MIN_MINUTES} до {poller.MAX_MINUTES}."))
         return doc.buttons(*[(tr(lang, f"{m} min", f"{m} мин"), f"iv:{m}") for m in self.INTERVALS if m != minutes])
 
     # --- status ----------------------------------------------------------------------------------

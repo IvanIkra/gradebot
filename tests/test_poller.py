@@ -171,7 +171,7 @@ async def test_relayout_drops_the_cache(google, poller, two, bot, api, llm):
     await poller.poll(full=False)
     assert len(llm.prompts) == 4
     await bot.handle(message(OWNER, "/relayout https://docs.google.com/spreadsheets/d/3QwErTyUiOpAsDfGhJkLzXcVb"))
-    assert "/relayout" in api.last(OWNER)["text"]
+    assert "Бот не читает такую таблицу" in api.last(OWNER)["text"]
 
 
 async def test_a_group_sheet_is_read_for_everyone_at_once(google, poller, bot, api, access):

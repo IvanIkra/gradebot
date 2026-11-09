@@ -11,13 +11,14 @@ import datetime as dt
 from . import clock, profile
 from .access import TRUSTED
 from .cards import grades_section
+from .dialog import Step, asks_hint, link_step
 from .groups import GroupError
 from .i18n import LANGUAGES, tr
 from .layout import label
 from .notices import explain
 from .profile import ProfileError
 from .rich import Doc, Html, b, code, join, link
-from .sheets import SheetError
+from .sheets import SheetError, course
 from .sheets import name as sheet_name
 
 COMPLAINTS_EVERY = dt.timedelta(days=1)     # one complaint about a sheet's layout a day from a user
@@ -110,28 +111,35 @@ class UserCommands:
                 ["/quiet", tr(lang, "quiet hours", "тихие часы")],
                 ["/lang", tr(lang, "language", "язык")],
                 ["/stop", tr(lang, "erase your data and leave", "удалить свои данные и уйти")]]
-        return Doc().h(tr(lang, "Commands", "Команды")).table([], rows)
+        return Doc().h(tr(lang, "Commands", "Команды")).table([], rows).p(asks_hint(lang))
 
     # --- the full name ---------------------------------------------------------------------------
 
     async def cmd_name(self, chat: int, user: dict, arg: str) -> None:
+        """`/name Surname Name`, or asked for."""
+        lang, now = user["lang"], user["student"]
+
+        def prompt(data: dict) -> Doc:
+            return Doc().p(tr(lang, "Your full name: ", "Твоё ФИО: ") if now else tr(lang, "No full name yet. ",
+                                                                                   "ФИО не указано. "),
+                           b(now) if now else "", ". " if now else "",
+                           tr(lang, "Send it exactly as the sheets have it, for example ",
+                              "Напиши его точно так, как в таблицах, например "),
+                           code(tr(lang, "Ivanov Ivan", "Иванов Иван")), ".")
+
+        step = Step("student", prompt, check=lambda value, data: profile.student(value),
+                    error=lambda lang, e: tr(lang, "That doesn't look like a full name: two words or more, letters "
+                                                   "only, as in the sheets.",
+                                             "Это не похоже на ФИО: нужно два слова или больше, только буквы — как "
+                                             "в таблицах."))
+        await self.flow(chat, lang, [step], lambda data: self.set_name(chat, user["tg_id"], data["student"]),
+                        {"student": arg} if arg else None)
+
+    async def set_name(self, chat: int, tg_id: int, student: str) -> None:
+        user = self.access.user(tg_id)
+        if user is None:
+            return
         lang = user["lang"]
-        if not arg:
-            now = user["student"]
-            await self.api.send(chat, Doc().p(
-                tr(lang, "Your full name: ", "Твоё ФИО: ") if now else
-                tr(lang, "No full name yet. ", "ФИО не указано. "),
-                b(now) if now else "",
-                tr(lang, ". To change it: ", ". Сменить: ") if now else tr(lang, "Send it: ", "Укажи его: "),
-                code(tr(lang, "/name Surname Name", "/name Фамилия Имя"))))
-            return
-        try:
-            student = profile.student(arg)
-        except ProfileError:
-            await self.api.send(chat, tr(
-                lang, "That doesn't look like a full name: two words or more, letters only, as in the sheets.",
-                "Это не похоже на ФИО: нужно два слова или больше, только буквы — как в таблицах."))
-            return
         if student == user["student"]:
             await self.api.send(chat, tr(lang, "That's your name already.", "Это ФИО уже записано."))
             return
@@ -156,17 +164,25 @@ class UserCommands:
     # --- sheets ----------------------------------------------------------------------------------
 
     async def cmd_sheet(self, chat: int, user: dict, arg: str) -> None:
-        """`/sheet <link> [short name]`. The short name (the sheet's `course`) is also its hashtag, and counts for a
-        sheet new to the bot only: without one the bot names the sheet by its title in Google, and later only the
-        owner changes it."""
+        """`/sheet <link> [short name]`, the missing ones asked for. The short name (the sheet's `course`) is also
+        its hashtag, and counts for a sheet new to the bot only: without one the bot names the sheet by its title in
+        Google, and later only the owner changes it."""
         lang = user["lang"]
-        if not arg:
-            await self.api.send(chat, Doc().p(tr(lang, "Send the sheet's link: ", "Пришли ссылку на таблицу: "),
-                                              code("/sheet https://docs.google.com/spreadsheets/d/…"))
-                                .p(self.course_hint(lang)))
+        url, _, name = arg.strip().partition(" ")
+        data = {"link": url, **({"name": name.strip()} if name.strip() else {})} if url else {}
+        steps = [link_step(lang),
+                 Step("name", lambda data: Doc().p(self.course_hint(lang)), check=lambda value, data: course(value),
+                      error=lambda lang, e: self.follow_error(e, lang),
+                      skip=lambda data: tr(lang, "Title from Google", "Название из Google"),
+                      when=lambda data: self.sheets.by_url(data["link"]) is None and not any(
+                          r["url"] == data["link"] for r in self.sheets.requests(user["tg_id"])))]
+        await self.flow(chat, lang, steps, lambda data: self.add_sheet(chat, user["tg_id"], data), data)
+
+    async def add_sheet(self, chat: int, tg_id: int, data: dict) -> None:
+        user = self.access.user(tg_id)
+        if user is None:
             return
-        url, _, course_text = arg.strip().partition(" ")
-        course_text = course_text.strip() or None
+        lang, url, course_text = user["lang"], data["link"], data.get("name") or None
         try:
             known = self.sheets.by_url(url)
             if known is None and user["rank"] < TRUSTED:
@@ -190,10 +206,9 @@ class UserCommands:
 
     @staticmethod
     def course_hint(lang: str) -> Html:
-        return join(tr(lang, "After the link you may add a short name for the sheet, up to 10 characters; it is its "
-                             "hashtag too: ",
-                       "После ссылки можно добавить короткое имя таблицы, до 10 символов; оно же хэштег: "),
-                    code(tr(lang, "/sheet <link> Calc", "/sheet <ссылка> Матан")), ". ",
+        return join(tr(lang, "A short name for the sheet, up to 10 characters; it is its hashtag too. For example ",
+                       "Короткое имя таблицы, до 10 символов; оно же хэштег. Например "),
+                    code(tr(lang, "Calc", "Матан")), ". ",
                     tr(lang, "Without it the bot takes the sheet's title in Google. It counts only if the bot doesn't "
                              "read the sheet yet; later only the owner changes it.",
                        "Без имени бот берёт название таблицы в Google. Имя учитывается, только если бот ещё не "
@@ -398,23 +413,28 @@ class UserCommands:
     # --- quiet hours and language ----------------------------------------------------------------
 
     async def cmd_quiet(self, chat: int, user: dict, arg: str) -> None:
+        """`/quiet 23-8`, `/quiet off`, or the hours now with buttons, and other ones typed."""
         lang = user["lang"]
-        if arg:
-            try:
-                self.access.set_quiet(user["tg_id"], profile.quiet(arg))
-            except ProfileError:
-                await self.api.send(chat, Doc().p(tr(lang, "Hours like ", "Часы вида "), code("/quiet 23-8"),
-                                                  tr(lang, ", or ", " или "), code("/quiet off")))
-                return
-            user = self.access.user(user["tg_id"])
-        await self.api.send(chat, self.quiet_view(user))
+
+        def check(value: str, data: dict) -> str:
+            profile.quiet(value)
+            return value
+
+        async def done(data: dict) -> None:
+            self.access.set_quiet(user["tg_id"], profile.quiet(data["hours"]))
+            await self.api.send(chat, self.quiet_view(self.access.user(user["tg_id"])))
+
+        step = Step("hours", lambda data: self.quiet_view(self.access.user(user["tg_id"])), check=check,
+                    error=lambda lang, e: tr(lang, "Hours like 23-8, or off.", "Часы вида 23-8 или off."),
+                    cancel=False)
+        await self.flow(chat, lang, [step], done, {"hours": arg} if arg else None)
 
     def quiet_view(self, user: dict) -> Doc:
         lang, hours = user["lang"], profile.hours(user)
         doc = Doc().p(tr(lang, "Quiet hours: ", "Тихие часы: "), b(hours or tr(lang, "off", "выключены")), ". ",
                       tr(lang, "Grades then come at once, but without a sound.",
                          "В это время оценки приходят сразу, но без звука."))
-        doc.p(tr(lang, "Other hours: ", "Другие часы: "), code("/quiet 22-7"))
+        doc.p(tr(lang, "Other hours: send them, like ", "Другие часы — пришли их, например "), code("22-7"))
         default = "{}-{}".format(*profile.QUIET_DEFAULT)
         buttons = [(f"{profile.QUIET_DEFAULT[0]}:00–{profile.QUIET_DEFAULT[1]}:00", f"qt:{default}")] \
             if hours != "{}:00–{}:00".format(*profile.QUIET_DEFAULT) else []
@@ -440,3 +460,4 @@ class UserCommands:
             "Удалить всё, что бот о тебе хранит, и уйти? Чтобы вернуться, понадобится новый код."))
             .buttons((tr(lang, "Yes, erase", "Да, удалить"), "stop!", "danger"),
                      (tr(lang, "Cancel", "Отмена"), "stop")))
+

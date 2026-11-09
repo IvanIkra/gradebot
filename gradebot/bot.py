@@ -11,6 +11,7 @@ from collections.abc import Callable
 
 from . import clock
 from .access import CODE_LENGTH, Access, NewUser, normalise
+from .dialog import Dialogs
 from .grades import Grades
 from .groups import Groups
 from .i18n import guess, tr
@@ -45,7 +46,7 @@ def full_name(user: dict) -> str:
     return " ".join(filter(None, (user.get("first_name"), user.get("last_name")))) or str(user["id"])
 
 
-class Bot(OwnerCommands, UserCommands, ReadNotices):
+class Bot(OwnerCommands, UserCommands, ReadNotices, Dialogs):
     def __init__(self, api: BotApi, store: Store, access: Access, sheets: Sheets, owner_id: int, zone: dt.tzinfo,
                  username: str = "", now: Callable[[], dt.datetime] = clock.now_utc):
         self.api, self.store, self.access, self.sheets = api, store, access, sheets
@@ -160,6 +161,10 @@ class Bot(OwnerCommands, UserCommands, ReadNotices):
             lang = guess(sender.get("language_code"))
             if lang != self.owner_lang:
                 self.store.put_json(OWNER_LANG, lang)
+            if cmd:
+                self.asks.pop(chat, None)
+            elif await self.answer(chat, arg):
+                return
             await self.owner_command(chat, cmd, arg, lang)
             return
         user = self.access.user(sender["id"])
@@ -168,6 +173,10 @@ class Bot(OwnerCommands, UserCommands, ReadNotices):
                 self.access.update_profile(sender["id"], full_name(sender), sender.get("username"))
             if self.access.expired(user):
                 await self.api.send(chat, self.ended(user["lang"]))
+                return
+            if cmd:
+                self.asks.pop(chat, None)
+            elif await self.answer(chat, arg):
                 return
             await self.user_command(chat, user, cmd, arg)
             return
@@ -179,7 +188,11 @@ class Bot(OwnerCommands, UserCommands, ReadNotices):
         if msg is not None:
             chat, message_id = msg["chat"]["id"], msg["message_id"]
             kind, _, arg = (cb.get("data") or "").partition(":")
-            if sender["id"] == self.owner_id:
+            if kind in ("an", "ac") and (sender["id"] == self.owner_id or (
+                    (user := self.access.user(sender["id"])) is not None and not self.access.expired(user))):
+                lang = self.owner_lang if sender["id"] == self.owner_id else user["lang"]
+                note = await self.dialog_callback(chat, message_id, kind, arg, lang)
+            elif sender["id"] == self.owner_id:
                 note = await self.owner_callback(chat, message_id, kind, arg, self.owner_lang)
             elif (user := self.access.user(sender["id"])) is not None:
                 note = tr(user["lang"], "Your access has ended", "Доступ закончился") if self.access.expired(user) \

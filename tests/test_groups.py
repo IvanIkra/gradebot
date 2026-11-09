@@ -110,7 +110,7 @@ async def test_a_code_without_a_group_asks_for_one(bot, api, access, sheets):
 
 
 async def test_no_groups_no_question(bot, api):
-    await bot.handle(message(OWNER, "/invite"))
+    await bot.handle(message(OWNER, "/invite Петя"))
     await bot.handle(message(PETR, f"/start {invite_code(api.last(OWNER)['text'])}"))
     assert "группе" not in api.last(PETR)["text"] and buttons(api.last(PETR)) == {}
 
@@ -152,9 +152,10 @@ async def test_the_owner_manages_groups(bot, api, access, sheets):
     assert "Общая таблица <b>Матан</b> группы <b>A2</b>. Подписано пользователей: 1." in api.last(OWNER)["text"]
     await bot.handle(message(OWNER, "/groups B1"))
     await bot.handle(message(OWNER, f"/groupsheet {ALG}"))
-    assert "Какой группе?" in api.last(OWNER)["text"] and "A2, B1" in api.last(OWNER)["text"]
+    question = api.last(OWNER)
+    assert "Какая группа?" in question["text"] and buttons(question)["B1"].startswith("an:")
     await bot.handle(message(OWNER, "/groupsheet B1 not-a-link"))
-    assert "не ссылка" in api.last(OWNER)["text"]
+    assert "Это не ссылка на таблицу Google" in api.last(OWNER)["text"]
     await bot.handle(message(OWNER, "/users"))
     assert "<td>A2</td>" in api.last(OWNER)["text"]
 

@@ -158,3 +158,8 @@ def add_user(access, tg_id: int, student: str | None, lang: str = "ru", name: st
     if student:
         access.set_student(tg_id, student)
     return access.user(tg_id)
+
+
+async def press(bot, chat: int, value: str = "") -> None:
+    """A button under the question the bot waits an answer to; "" is Skip."""
+    await bot.handle(callback(chat, f"an:{value}", bot.asks[chat].message_id))

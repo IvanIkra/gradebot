@@ -2,7 +2,7 @@ import pytest
 
 from gradebot.access import TRUSTED
 
-from .conftest import OWNER, buttons, callback, invite_code, message
+from .conftest import OWNER, buttons, callback, invite_code, message, press
 from .test_sheets import ALG, CALC
 
 PETR = 2001
@@ -42,7 +42,9 @@ async def test_sheets_follow_and_unfollow(bot, api, sheets, access, petr):
     assert "Таблиц пока нет" in api.last(PETR)["text"]
     await bot.handle(message(PETR, "/sheet https://example.com/x"))
     assert "не ссылка на таблицу Google" in api.last(PETR)["text"]
-    await bot.handle(message(PETR, f"/sheet {CALC}"))
+    await bot.handle(message(PETR, CALC))                       # the answer to the link asked again
+    assert "Короткое имя таблицы" in api.last(PETR)["text"]
+    await press(bot, PETR)                                      # «Title from Google»
     reply = api.last(PETR)["text"]
     assert "Подписал на <b>…789abc</b>" in reply and "нужно ФИО" in reply
     await bot.handle(message(PETR, f"/sheet {CALC}"))
@@ -61,13 +63,16 @@ async def test_quiet_hours(bot, api, access, petr):
     view = api.last(PETR)
     assert "Тихие часы: <b>23:00–8:00</b>" in view["text"]
     assert buttons(view) == {"Выключить": "qt:off"}
+    await bot.handle(message(PETR, "21-6"))                     # other hours, typed after /quiet
+    assert "<b>21:00–6:00</b>" in api.last(PETR)["text"]
+    await bot.handle(message(PETR, "/quiet"))
     await bot.handle(callback(PETR, "qt:off"))
     assert (access.user(PETR)["quiet_from"], access.user(PETR)["quiet_to"]) == (None, None)
     assert buttons(api.last(PETR)) == {"23:00–8:00": "qt:23-8"}
     await bot.handle(message(PETR, "/quiet 22-7"))
     assert "<b>22:00–7:00</b>" in api.last(PETR)["text"]
     await bot.handle(message(PETR, "/quiet ночью"))
-    assert "/quiet 23-8" in api.last(PETR)["text"]
+    assert "Часы вида 23-8 или off" in api.last(PETR)["text"]
     assert access.user(PETR)["quiet_from"] == 22
 
 
@@ -85,6 +90,7 @@ async def test_language(bot, api, access, petr):
 async def test_stop_drops_own_sheets(bot, api, sheets, access, petr):
     access.set_rank(PETR, TRUSTED)
     await bot.handle(message(PETR, f"/sheet {CALC}"))
+    await press(bot, PETR)
     sheet_id = sheets.followed(PETR)[0]["id"]
     await bot.handle(callback(PETR, "stop!"))
     assert sheets.get(sheet_id) is None
@@ -95,7 +101,11 @@ async def test_a_course_for_a_sheet_new_to_the_bot(bot, api, sheets, access, pet
     assert "/sheet &lt;ссылка&gt; [имя]" in api.last(PETR)["text"] and "название таблицы в Google" in \
         api.last(PETR)["text"]
     await bot.handle(message(PETR, "/sheet"))
+    assert "Пришли ссылку на таблицу" in api.last(PETR)["text"]
+    await bot.handle(message(PETR, CALC))
     assert "Без имени бот берёт название таблицы в Google" in api.last(PETR)["text"]
+    await bot.handle(callback(PETR, "ac", bot.asks[PETR].message_id))
+    assert "Отменено" in api.last(PETR)["text"] and PETR not in bot.asks
     access.set_rank(PETR, TRUSTED)
     await bot.handle(message(PETR, f"/sheet {CALC} Слишком длинный"))
     assert "В коротком имени не больше 10 символов" in api.last(PETR)["text"] and sheets.by_url(CALC) is None
@@ -116,5 +126,8 @@ async def test_a_course_for_a_sheet_new_to_the_bot(bot, api, sheets, access, pet
 
     await bot.handle(message(OWNER, f"/rename {ALG} Алг"))
     assert "Имя: <b>Алг</b>" in api.last(OWNER)["text"]
-    await bot.handle(message(OWNER, f"/rename {ALG}"))
+    await bot.handle(message(OWNER, "/rename"))
+    assert buttons(api.last(OWNER))["Алг"] == f"an:#{sheets.by_url(ALG)['id']}"
+    await press(bot, OWNER, f"#{sheets.by_url(ALG)['id']}")
+    await press(bot, OWNER)                                     # «Title from Google»
     assert "Короткого имени нет" in api.last(OWNER)["text"] and "первые 8 символов" in api.last(OWNER)["text"]
