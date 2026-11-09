@@ -1,14 +1,15 @@
-"""The layout of a tab by Haiku, and the grades it gives a student's row (spec §5.2).
+"""The layout of a tab by Haiku, and the grades it gives a student's row.
 
 Haiku sees a tab's name, its top rows above a student's row and that row without the name, and says which top rows
 are the header, which columns are graded works, their maximum, a bonus column and a short label in English and in
-Russian: a user sees the one of their language. A layout
-does not depend on the student, so it is one for everyone who follows the sheet: it is asked with the row of any
-follower that has numbers in the tab, and cached in kv by sheet, tab and label budget together with the text of the
-header rows it named. While that text stays, the layout stands, whatever the other rows do; a changed header asks
-again. With no header named, any change in the top rows asks again. An answer the model cannot give (refused, cut)
-is cached as a skipped tab until the top rows change: the same input would fail again at every poll. A failure on
-the way (the network, the limit) is the caller's: the sheet is read again at the next poll.
+Russian: a user sees the one of their language.
+
+A layout does not depend on the student, so it is one for everyone who follows the sheet: it is asked with the row of
+any follower that has numbers in the tab, and cached in kv by sheet, tab and label budget together with the text of
+the header rows it named. While that text stays, the layout stands, whatever the other rows do; a changed header asks
+again. With no header named, any change in the top rows asks again. An answer the model cannot give (refused, cut) is
+cached as a skipped tab until the top rows change: the same input would fail again at every poll. A failure on the
+way (the network, the limit) is the caller's: the sheet is read again at the next poll.
 """
 
 import hashlib

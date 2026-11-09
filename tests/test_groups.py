@@ -86,9 +86,9 @@ async def test_a_code_with_a_group(bot, api, access, sheets):
     assert "<td>A1</td>" in api.last(OWNER)["text"]
     await bot.handle(message(PETR, f"/start {invite_code(reply)}"))
     welcome = api.last(PETR)
-    assert "Твоя группа: <b>A1</b>" in welcome["text"] and "общие таблицы: 1" in welcome["text"]
+    assert "Твоя группа: <b>A1</b>" in welcome["text"] and "общие таблицы (1)" in welcome["text"]
     assert not any(data.startswith("gj:") for data in buttons(welcome).values())
-    assert "вошёл по коду «Петя», группа A1" in api.last(OWNER)["text"]
+    assert ": вход по коду «Петя», группа A1" in api.last(OWNER)["text"]
     assert access.user(PETR)["grp"] == gid and len(sheets.followed(PETR)) == 1
 
 
@@ -105,7 +105,7 @@ async def test_a_code_without_a_group_asks_for_one(bot, api, access, sheets):
     edited = api.last(PETR)
     assert edited["method"] == "editMessageText" and "Твоя группа: <b>B2</b>" in edited["text"]
     assert "/name" in edited["text"] and access.user(PETR)["grp"] == b2
-    assert "Пётр (@petr_example) теперь в группе <b>B2</b>" in api.last(OWNER)["text"]
+    assert "Пётр (@petr_example): теперь в группе <b>B2</b>" in api.last(OWNER)["text"]
     assert [s["url"] for s in sheets.followed(PETR)] == [sheets.by_url(ALG)["url"]]
 
 

@@ -456,7 +456,7 @@ class OwnerCommands:
             return self.users_view(lang)
         doc = Doc().p(tr(lang, "Delete ", "Удалить "), self.who(user), "? ",
                       tr(lang, "Everything the bot keeps about them is erased; they'll need a new code to come back.",
-                         "Всё, что бот о нём хранит, сотрётся; вернуться можно будет только с новым кодом."))
+                         "Все данные пользователя сотрутся; вернуться можно будет только с новым кодом."))
         return doc.buttons((tr(lang, "Yes, delete", "Да, удалить"), f"dy:{tg_id}", "danger"),
                            (tr(lang, "Cancel", "Отмена"), "users"))
 
@@ -522,7 +522,7 @@ class OwnerCommands:
             code(tr(ulang, "/name Surname Name", "/name Фамилия Имя"))))
         return tr(lang, "Reset", "Сброшено")
 
-    # --- sheets ----------------------------------------------------------------------------------
+    # --- groups and their sheets -----------------------------------------------------------------
 
     async def cmd_groups(self, chat: int, arg: str, lang: str) -> None:
         """`/groups` lists them, `/groups <name>` makes one, `/groups <name> <new name>` renames one."""
@@ -771,7 +771,7 @@ class OwnerCommands:
             [tr(lang, "blocked the bot", "заблокировали бота"), str(sum(bool(u["paused"]) for u in users))],
             [tr(lang, "subscriptions with no row found", "подписок без найденной строки"), str(rows["bad_rows"])],
             [tr(lang, "sheets waiting for approval", "таблиц ждут одобрения"), str(len(self.sheets.requests()))],
-            [tr(lang, "access ends within 3 days", "доступ кончается за 3 дня"),
+            [tr(lang, "access ends within 3 days", "доступ кончается в ближайшие 3 дня"),
              str(sum(bool(u["expires_at"]) and not self.access.expired(u)
                      and clock.parse(u["expires_at"]) - self.now() <= SOON for u in users))],
             [tr(lang, "access ended", "доступ закончился"), str(sum(self.access.expired(u) for u in users))],
@@ -796,16 +796,6 @@ class OwnerCommands:
                 doc.p(b(tr(lang, "The monthly limit is spent: new tabs wait for the next month.",
                            "Месячный лимит исчерпан: новые вкладки ждут следующего месяца.")))
         return doc.buttons((tr(lang, "Refresh", "Обновить"), "st"))
-
-    @staticmethod
-    def sheet_error(error: SheetError, lang: str) -> str:
-        text = str(error)
-        if "at most" in text:
-            return tr(lang, "A short name has at most 10 characters.", "В коротком имени не больше 10 символов.")
-        if "nobody" in text:
-            return tr(lang, "Nobody follows this sheet.", "На эту таблицу никто не подписан.")
-        return tr(lang, "That's not a Google Sheets link: https://docs.google.com/spreadsheets/d/…",
-                  "Это не ссылка на таблицу Google: https://docs.google.com/spreadsheets/d/…")
 
 
 SOON = dt.timedelta(days=3)     # /status counts the users whose access ends within this

@@ -1,4 +1,4 @@
-"""A downloaded grade sheet: its visible tabs, and in them the rows of the students who follow it (spec §5.1).
+"""A downloaded grade sheet: its visible tabs, and in them the rows of the students who follow it.
 
 The workbook is parsed once per read, then searched for every follower's full name. A name is compared without case,
 "ё" and punctuation, and matches the start of a cell: "Иванов Иван" finds "ИВАНОВ Иван Сергеевич". A name that

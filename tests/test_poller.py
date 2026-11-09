@@ -146,6 +146,21 @@ async def test_a_sheet_failing_for_12_hours_is_told_once_and_its_return_too(goog
     assert sheets.get(two)["error"] is None and bot.grades.waiting() == []
 
 
+async def test_a_failing_sheet_is_not_told_to_whom_the_bot_must_not_write(google, poller, two, bot, api, clock,
+                                                                           store, sheets):
+    await poller.poll()
+    google["data"] = 404
+    await poller.poll()
+    with store.db:  # Anna's access ended: the bot neither reads for her nor writes to her
+        store.db.execute("update users set expires_at = ?, access_told = 2 where tg_id = 2",
+                         ("2026-11-09T12:00:00+00:00",))
+    sent = len(api.sent())
+    clock.advance(hours=13)
+    await poller.poll()
+    assert sorted(m["chat_id"] for m in api.sent()[sent:]) == [1, OWNER]
+    assert "попробую при следующем чтении" in api.last(1)["text"]
+
+
 async def test_a_failed_layout_records_nothing_until_the_next_poll(google, poller, two, bot, llm, sheets):
     llm.error = BudgetExceeded("the monthly LLM limit is spent")
     [read] = await poller.poll()

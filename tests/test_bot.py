@@ -36,7 +36,7 @@ async def test_invite_and_come_in(bot, api, access):
     assert "/name Фамилия Имя" in api.last(PETR)["text"]
     assert access.user(PETR)["lang"] == "ru"
     note = api.last(OWNER)
-    assert "Пётр (@petr_example) вошёл по коду «Петя»" in note["text"]
+    assert "Пётр (@petr_example): вход по коду «Петя»" in note["text"]
     assert buttons(note) == {"Удалить": f"du:{PETR}"}
 
     await bot.handle(message(ANNA, f"/start {code}"))
@@ -117,7 +117,7 @@ async def test_user_stops(bot, api, access):
     assert access.user(PETR) is not None and "Остаёмся" in api.last(PETR)["text"]
     await bot.handle(callback(PETR, buttons(ask)["Да, удалить"]))
     assert access.user(PETR) is None
-    assert "Ушёл из бота через /stop: Пётр (@petr_example)" in api.last(OWNER)["text"]
+    assert "Выход из бота через /stop: Пётр (@petr_example)" in api.last(OWNER)["text"]
 
 
 async def test_strangers_callbacks_do_nothing(bot, api, access):

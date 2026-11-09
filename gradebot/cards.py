@@ -1,4 +1,4 @@
-"""Grades as messages (spec §6.2, §6.3): new grades after a poll, and /grades.
+"""Grades as messages: new grades after a poll, and /grades.
 
 A sheet is a section headed by its title, linked to the sheet, and its course's hashtag; a work is a table row: its
 label in the user's language (without the course, the heading has it), the grade on 0-10 with the bonus, the sheet's

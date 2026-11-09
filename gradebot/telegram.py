@@ -1,5 +1,5 @@
 """A thin Bot API client on aiohttp: long polling and the few methods the bot needs. No bot library: rich messages
-(Bot API 10.1+) are new, and the bot needs only a handful of calls."""
+(Bot API 10.3+: buttons inside them came then) are new, and the bot needs only a handful of calls."""
 
 import asyncio
 import logging

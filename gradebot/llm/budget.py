@@ -1,4 +1,4 @@
-"""One limit in dollars a month for every LLM call (spec §7). Months are local months (TZ).
+"""One limit in dollars a month for every LLM call. Months are local months (TZ).
 
 Before a call the worst case is reserved: the input estimated from its length plus max_tokens of output. A call
 whose reserve does not fit what is left is not made: new tabs wait for the next month, layouts already cached keep

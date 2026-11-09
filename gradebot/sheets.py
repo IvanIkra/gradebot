@@ -1,5 +1,5 @@
 """The Google Sheets users follow. A sheet is one row for everyone who follows it, so it is downloaded and laid out
-once (spec §5.1); `subscriptions` say who follows what.
+once; `subscriptions` say who follows what.
 
 A member's sheet the bot does not read yet is a request until the owner approves it (`access.MEMBER`); it counts
 towards the user's limit while it waits.

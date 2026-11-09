@@ -38,7 +38,7 @@ async def test_a_code_for_two(bot, api, access):
     assert "Код «Семинар»: вошли 0 из 2" in reply and "доступ бессрочный" in reply
     code = invite_code(reply)
     await bot.handle(message(PETR, f"/start {code}"))
-    assert "вошёл по коду «Семинар» (1/2)" in api.last(OWNER)["text"]
+    assert ": вход по коду «Семинар» (1/2)" in api.last(OWNER)["text"]
     await bot.handle(message(OWNER, "/codes"))
     assert '<td align="right">1/2</td>' in api.last(OWNER)["text"]
     await bot.handle(message(ANNA, f"/start {code}", first="Анна"))
@@ -98,11 +98,11 @@ async def test_access_for_a_while(bot, api, access, sheets, clock):
     await bot.handle(callback(PETR, "pr"))                 # the user asks: now the owner hears, once
     assert api.calls[-1][1]["text"] == "Отправлено владельцу"
     request = api.last(OWNER)
-    assert "просит продлить доступ, он закончился 09.12 15:00" in request["text"]
+    assert "просьба продлить доступ, он закончился 09.12 15:00" in request["text"]
     assert buttons(request) == {"+7 дн.": f"ax:{PETR}.7", "+30 дн.": f"ax:{PETR}.30", "+90 дн.": f"ax:{PETR}.90",
                                 "Бессрочно": f"ax:{PETR}.0", "Удалить": f"du:{PETR}"}
     await bot.handle(callback(PETR, "pr"))
-    assert api.calls[-1][1]["text"] == "Уже попросил" and api.last(OWNER) == request
+    assert api.calls[-1][1]["text"] == "Просьба уже отправлена" and api.last(OWNER) == request
 
     await bot.handle(message(PETR, "/grades"))
     assert "Доступ к боту закончился" in api.last(PETR)["text"]

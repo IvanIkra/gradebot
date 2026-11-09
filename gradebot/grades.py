@@ -1,5 +1,4 @@
-"""Grades of every user in every sheet they follow, and the new ones among them (spec §5.3), one user at a
-time.
+"""Grades of every user in every sheet they follow, and the new ones among them, one user at a time.
 
 A grade's key is its place: tab, column and the column's header, not its label, so a new label is no new grade. The
 first read of a sheet for a user is the baseline: it fills grade_items and records nothing. After it, a work new to

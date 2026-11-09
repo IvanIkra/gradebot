@@ -26,7 +26,7 @@ async def test_a_new_sheet_of_a_member_waits_for_approval(bot, api, sheets, acce
     assert "сначала её одобрит владелец" in api.last(PETR)["text"]
     assert sheets.followed(PETR) == [] and sheets.by_url(CALC) is None
     request = api.last(OWNER)
-    assert "просит подписать его на таблицу" in request["text"]
+    assert "просьба подписать на таблицу" in request["text"]
     await bot.handle(message(PETR, f"/sheet {CALC}"))
     assert "уже ждёт одобрения" in api.last(PETR)["text"]
     await bot.handle(message(PETR, "/sheets"))

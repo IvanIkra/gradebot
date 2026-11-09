@@ -1,4 +1,4 @@
-"""Who may use the bot: one-time invite codes from the owner, the users who came in with them, and a limit on wrong
+"""Who may use the bot: invite codes from the owner, the users who came in with them, and a limit on wrong
 codes.
 
 A code is six characters from an alphabet without look-alikes (no 0/O, 1/I/L), shown as XXX-XXX: 31^6, close to

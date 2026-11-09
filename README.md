@@ -4,8 +4,8 @@ A Telegram bot that sends a small group of friends their new grades from the Goo
 user sets their full name as the sheets have it and picks the sheets; the bot reads them every 30 minutes (the owner may
 change it) and sends new and changed grades to a private chat.
 
-Access is by invite codes from the owner: for one person or several, for a while or for good. There is no sign-up and no public web part: the bot only talks
-to the Bot API by long polling.
+Access is by invite codes from the owner: for one person or several, for a while or for good. There is no sign-up
+and no public web part: the bot only talks to the Bot API by long polling.
 
 > Status: early. Everything below is done and tested, but not yet run against live Telegram: deployment and a
 > trial with a few friends come next.

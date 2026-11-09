@@ -22,7 +22,7 @@ async def test_name_tells_the_owner_and_can_be_reset(bot, api, access, petr):
     assert access.user(PETR)["student"] == "Петров Пётр"
     assert "Записал: <b>Петров Пётр</b>" in api.last(PETR)["text"] and "/sheet" in api.last(PETR)["text"]
     note = api.last(OWNER)
-    assert "Пётр (@petr_example) указал ФИО <b>Петров Пётр</b>" in note["text"]
+    assert "Пётр (@petr_example): ФИО <b>Петров Пётр</b>" in note["text"]
     await bot.handle(message(PETR, "/name Петров Пётр"))
     assert "уже записано" in api.last(PETR)["text"]
     await bot.handle(message(PETR, "/name Петров Пётр Петрович"))
@@ -34,6 +34,12 @@ async def test_name_tells_the_owner_and_can_be_reset(bot, api, access, petr):
     assert "Владелец сбросил твоё ФИО" in api.last(PETR)["text"]
     await bot.handle(message(PETR, "/name"))
     assert "ФИО не указано" in api.last(PETR)["text"]
+
+
+async def test_start_again_says_you_are_in(bot, api, petr):
+    for text in ("/start", "/start ABC-DEF"):
+        await bot.handle(message(PETR, text))
+        assert "Ты уже в списке" in api.last(PETR)["text"]
 
 
 async def test_sheets_follow_and_unfollow(bot, api, sheets, access, petr):
@@ -48,7 +54,7 @@ async def test_sheets_follow_and_unfollow(bot, api, sheets, access, petr):
     reply = api.last(PETR)["text"]
     assert "Подписал на <b>…789abc</b>" in reply and "нужно ФИО" in reply
     await bot.handle(message(PETR, f"/sheet {CALC}"))
-    assert "уже подписан" in api.last(PETR)["text"]
+    assert "уже в твоих подписках" in api.last(PETR)["text"]
 
     await bot.handle(message(PETR, "/sheets"))
     listing = api.last(PETR)

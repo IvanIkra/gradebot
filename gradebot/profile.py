@@ -36,7 +36,7 @@ def quiet(text: str) -> tuple[int, int] | None:
 
 
 def is_quiet(user: dict, moment: dt.datetime, zone: dt.tzinfo) -> bool:
-    """Within the user's quiet hours at `moment`: messages then go without a sound (spec §5.4)."""
+    """Within the user's quiet hours at `moment`: messages then go without a sound."""
     start, end = user.get("quiet_from"), user.get("quiet_to")
     if start is None or end is None:
         return False

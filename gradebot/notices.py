@@ -1,7 +1,7 @@
 """What the bot tells unasked after the sheets are read: new grades, how a requested read went, a sheet that cannot
 be read for 12 hours and its return, and the LLM limit to the owner.
 
-New grades go to every user in one message a poll (spec §5.4), more only when it does not fit the limits of a rich
+New grades go to every user in one message a poll, more only when it does not fit the limits of a rich
 message; each message marks its own grades sent, so a failure halfway sends nothing twice. Within the user's quiet
 hours it comes without a sound. Grades not sent (Telegram failed, the user blocked the bot) wait for the next poll
 while they are within the window of a week.
@@ -30,11 +30,11 @@ def explain(error: str, lang: str) -> str:
     if what == poller.CLOSED:
         return tr(lang, "closed: open it to anyone with the link", "закрыта: открой её всем, у кого есть ссылка")
     if what == poller.DOWNLOAD:
-        return tr(lang, f"cannot be downloaded ({detail}), I'll try again in 30 minutes",
-                  f"не скачивается ({detail}), попробую через 30 минут")
+        return tr(lang, f"cannot be downloaded ({detail}), I'll try again at the next read",
+                  f"не скачивается ({detail}), попробую при следующем чтении")
     if what == poller.LAYOUT:
-        return tr(lang, "its tabs could not be laid out, I'll try again in 30 minutes",
-                  "не удалось разметить вкладки, попробую через 30 минут")
+        return tr(lang, "its tabs could not be laid out, I'll try again at the next read",
+                  "не удалось разметить вкладки, попробую при следующем чтении")
     if what == poller.BUDGET:
         return tr(lang, "the limit for laying out new tabs is spent until next month",
                   "лимит на разметку новых вкладок исчерпан до следующего месяца")
@@ -105,10 +105,12 @@ class ReadNotices:
                 self.grades.sent(ids, msg_id)
 
     async def tell_failing(self, read: SheetRead) -> None:
-        """A sheet failing for 12 hours, or back after that: the owner and every follower, once each."""
+        """A sheet failing for 12 hours, or back after that: the owner and every follower, once each. A follower
+        who blocked the bot or whose access ended hears nothing."""
         sheet = read.sheet
         for tg_id in self.sheets.followers(sheet["id"]):
-            if (user := self.access.user(tg_id)) is not None:
+            user = self.access.user(tg_id)
+            if user is not None and not user["paused"] and not self.access.expired(user):
                 await self.tell(user, self.failing_doc(sheet, read, user["lang"]))
         await self.tell_owner(self.failing_doc(sheet, read, self.owner_lang, read.error)
                               .buttons((tr(self.owner_lang, "Open the sheet", "Открыть таблицу"), sheet["url"])))

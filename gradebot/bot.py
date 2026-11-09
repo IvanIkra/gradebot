@@ -28,7 +28,7 @@ from .users import UserCommands, group_buttons
 log = logging.getLogger(__name__)
 
 ACCESS_CHECK = 600                      # seconds between looks at whose access ends
-ACCESS_WARN = dt.timedelta(days=1)      # a user and the owner hear this long before the access ends
+ACCESS_WARN = dt.timedelta(days=1)      # a user hears this long before their access ends
 PROLONG = (7, 30, 90)                   # days the owner's buttons add
 OWNER_LANG = "owner.lang"   # kv: the language of the owner's last message, for what the bot tells them unasked
 
@@ -99,7 +99,7 @@ class Bot(OwnerCommands, UserCommands, ReadNotices, Dialogs):
         lang = self.owner_lang
         await self.tell_owner(Doc().p(self.who(user), tr(
             lang, " blocked the bot: their sheets are paused until they write to it again.",
-            " заблокировал бота: его таблицы на паузе, пока он снова не напишет боту."))
+            ": бот заблокирован, таблицы на паузе до нового сообщения боту."))
             .buttons((tr(lang, "Delete", "Удалить"), f"du:{user['tg_id']}", "danger")))
 
     # --- access for a while --------------------------------------------------------------------
@@ -137,12 +137,12 @@ class Bot(OwnerCommands, UserCommands, ReadNotices, Dialogs):
         if not user["expires_at"]:
             return tr(lang, "Your access is for good", "Доступ и так бессрочный")
         if user["prolong_asked"]:
-            return tr(lang, "Already asked", "Уже попросил")
+            return tr(lang, "Already asked", "Просьба уже отправлена")
         self.access.asked_prolong(user["tg_id"])
         owner = self.owner_lang
-        what = tr(owner, " asks to prolong the access, which ends ", " просит продлить доступ, он заканчивается ") \
+        what = tr(owner, " asks to prolong the access, which ends ", ": просьба продлить доступ, он заканчивается ") \
             if not self.access.expired(user) else \
-            tr(owner, " asks to prolong the access, which ended ", " просит продлить доступ, он закончился ")
+            tr(owner, " asks to prolong the access, which ended ", ": просьба продлить доступ, он закончился ")
         await self.tell_owner(self.prolong_doc(user, owner, what)
                               .buttons((tr(owner, "Delete", "Удалить"), f"du:{user['tg_id']}", "danger")))
         return tr(lang, "Sent to the owner", "Отправлено владельцу")
@@ -223,7 +223,7 @@ class Bot(OwnerCommands, UserCommands, ReadNotices, Dialogs):
         if self.access.locked(tg_id):
             return
         lang = guess(sender.get("language_code"))
-        pasted = not cmd and len(normalise(arg)) in (CODE_LENGTH, 8)  # 8: codes from before
+        pasted = not cmd and len(normalise(arg)) == CODE_LENGTH
         candidate = arg if cmd == "/start" or pasted else ""
         if candidate:
             new = NewUser(tg_id, full_name(sender), sender.get("username"), lang)
@@ -238,7 +238,7 @@ class Bot(OwnerCommands, UserCommands, ReadNotices, Dialogs):
                 owner = self.owner_lang
                 count = f" ({invite['used']}/{invite['uses'] or '∞'})" if invite["uses"] != 1 else ""
                 await self.tell_owner(
-                    Doc().p(self.who(user), tr(owner, " came in with the code", " вошёл по коду"), note, count,
+                    Doc().p(self.who(user), tr(owner, " came in with the code", ": вход по коду"), note, count,
                             *([tr(owner, ", group ", ", группа "), group["name"]] if group else []),
                             *([tr(owner, ", access until ", ", доступ до "), self.when(user["expires_at"])]
                               if user["expires_at"] else []))
@@ -259,7 +259,7 @@ class Bot(OwnerCommands, UserCommands, ReadNotices, Dialogs):
         if group:
             doc.p(tr(lang, "Your group: ", "Твоя группа: "), b(group["name"]), ". ",
                   tr(lang, f"You follow its shared sheets: {followed}. The list is in /sheets.",
-                     f"Ты подписан на её общие таблицы: {followed}. Список — в /sheets.") if followed else "")
+                     f"Её общие таблицы ({followed}) уже в твоих подписках. Список — в /sheets.") if followed else "")
         elif groups := self.groups.all():
             doc.p(tr(lang, "Which group are you in? I'll follow its shared sheets for you. You can change it later "
                            "with /group.",

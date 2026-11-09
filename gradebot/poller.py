@@ -1,4 +1,4 @@
-"""Reading the sheets (spec §5.1).
+"""Reading the sheets.
 
 Every interval (30 minutes unless the owner sets another with /interval) each sheet that has a reader (a follower
 with a full name who has not blocked the bot) is downloaded as xlsx once, its title fetched once from the HTML

@@ -42,7 +42,7 @@ class UserCommands:
                     "/lang": self.cmd_lang, "/stop": self.cmd_stop}
         if cmd in handlers:
             await handlers[cmd](chat, user, arg)
-        elif cmd == "/start" and not arg:
+        elif cmd == "/start":
             await self.api.send(chat, tr(lang, "You're already in. /help lists the commands.",
                                          "Ты уже в списке. Команды — в /help."))
         else:
@@ -68,7 +68,7 @@ class UserCommands:
         if kind == "us" and arg.isdigit():
             done = self.sheets.unfollow(user["tg_id"], int(arg))
             await self.api.edit(chat, message_id, self.sheets_view(user))
-            return tr(lang, "Unfollowed", "Отписан") if done else None
+            return tr(lang, "Unfollowed", "Подписка снята") if done else None
         if kind == "cr" and arg.isdigit():
             found = self.sheets.drop_request(int(arg), user["tg_id"])
             await self.api.edit(chat, message_id, self.sheets_view(user))
@@ -92,7 +92,7 @@ class UserCommands:
             await self.api.edit(chat, message_id, tr(
                 lang, "Your data is erased. To come back you'll need a new invite code.",
                 "Твои данные удалены. Чтобы вернуться, нужен новый код приглашения."))
-            left = tr(self.owner_lang, "Left the bot with /stop: ", "Ушёл из бота через /stop: ")
+            left = tr(self.owner_lang, "Left the bot with /stop: ", "Выход из бота через /stop: ")
             await self.tell_owner(Doc().p(left, self.who(user)))
         elif kind == "stop":
             await self.api.edit(chat, message_id, tr(lang, "Staying, nothing erased.", "Остаёмся, ничего не удалено."))
@@ -157,7 +157,7 @@ class UserCommands:
         owner = self.owner_lang
         before = [tr(owner, " (was ", " (было "), user["student"], ")"] if user["student"] else []
         await self.tell_owner(
-            Doc().p(self.who(user), tr(owner, " set the full name ", " указал ФИО "), b(student), *before)
+            Doc().p(self.who(user), tr(owner, " set the full name ", ": ФИО "), b(student), *before)
             .buttons((tr(owner, "Reset", "Сбросить"), f"nr:{user['tg_id']}", "danger")))
         self.read_soon(user["tg_id"], [sheet["id"] for sheet in followed])
 
@@ -193,7 +193,7 @@ class UserCommands:
             await self.api.send(chat, self.follow_error(e, lang))
             return
         if not new:
-            await self.api.send(chat, tr(lang, "You follow this sheet already.", "Ты уже подписан на эту таблицу."))
+            await self.api.send(chat, tr(lang, "You follow this sheet already.", "Эта таблица уже в твоих подписках."))
             return
         doc = self.following(user, sheet)
         if known is not None and course_text:
@@ -250,7 +250,7 @@ class UserCommands:
         owner = self.owner_lang
         await self.tell_owner(
             Doc().p(self.who(user), tr(owner, " asks to follow a sheet the bot doesn't read yet: ",
-                                       " просит подписать его на таблицу, которую бот ещё не читает: "),
+                                       ": просьба подписать на таблицу, которую бот ещё не читает: "),
                     link(request["url"], request["url"]),
                     *([tr(owner, ", short name ", ", имя "), b(request["course"])] if request["course"] else []))
             .buttons((tr(owner, "Approve", "Одобрить"), f"sa:{request['id']}", "success"),
@@ -274,8 +274,8 @@ class UserCommands:
             return doc.p(tr(lang, "There are no groups yet.", "Групп пока нет."))
         doc.p(tr(lang, "In a group you follow its shared sheets. Moving to another one unfollows the old group's "
                        "sheets (with their grades) and follows the new one's.",
-                 "В группе ты подписан на её общие таблицы. При переходе в другую группу подписки на таблицы старой "
-                 "снимаются (вместе с оценками), а на таблицы новой — добавляются."))
+                 "Все в группе подписаны на её общие таблицы. При переходе в другую группу подписки на таблицы "
+                 "старой снимаются (вместе с оценками), а на таблицы новой — добавляются."))
         return group_buttons(doc, others, "gp", lang, none=mine is not None)
 
     async def choose_group(self, chat: int, message_id: int, user: dict, gid: int, first: bool) -> str | None:
@@ -299,9 +299,9 @@ class UserCommands:
         if (before or {}).get("id") != (group or {}).get("id"):
             owner = self.owner_lang
             if group is None:
-                news = [tr(owner, " left the group ", " вышел из группы "), b(before["name"])]
+                news = [tr(owner, " left the group ", ": больше не в группе "), b(before["name"])]
             else:
-                news = [tr(owner, " is in the group ", " теперь в группе "), b(group["name"]),
+                news = [tr(owner, " is in the group ", ": теперь в группе "), b(group["name"]),
                         *([tr(owner, " (was ", " (была "), before["name"], ")"] if before else [])]
             await self.tell_owner(Doc().p(self.who(user), *news))
         if user["student"] and followed:

@@ -1,4 +1,4 @@
-"""Groups of users and their shared sheets (spec §4.2). The owner makes groups and gives each its sheets; a user is in
+"""Groups of users and their shared sheets. The owner makes groups and gives each its sheets; a user is in
 one group or none, picked at registration and changed with /group. A group that came with the invite code is fixed:
 only the owner moves such a user (`fixed`).
 
