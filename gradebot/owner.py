@@ -771,6 +771,10 @@ class OwnerCommands:
             [tr(lang, "blocked the bot", "заблокировали бота"), str(sum(bool(u["paused"]) for u in users))],
             [tr(lang, "subscriptions with no row found", "подписок без найденной строки"), str(rows["bad_rows"])],
             [tr(lang, "sheets waiting for approval", "таблиц ждут одобрения"), str(len(self.sheets.requests()))],
+            [tr(lang, "access ends within 3 days", "доступ кончается за 3 дня"),
+             str(sum(bool(u["expires_at"]) and not self.access.expired(u)
+                     and clock.parse(u["expires_at"]) - self.now() <= SOON for u in users))],
+            [tr(lang, "access ended", "доступ закончился"), str(sum(self.access.expired(u) for u in users))],
             [tr(lang, "grades waiting to be sent", "оценок ждут отправки"), str(rows["waiting"])]],
             [None, "right"])
         doc.h("Haiku")
@@ -804,6 +808,7 @@ class OwnerCommands:
                   "Это не ссылка на таблицу Google: https://docs.google.com/spreadsheets/d/…")
 
 
+SOON = dt.timedelta(days=3)     # /status counts the users whose access ends within this
 UNITS = {"d": 24, "д": 24, "h": 1, "ч": 1}
 MAX_USES = 1000
 MAX_DAYS = 365

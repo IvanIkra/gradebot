@@ -77,23 +77,33 @@ async def test_access_for_a_while(bot, api, access, sheets, clock):
     assert len(sheets.to_read()) == 1
 
     await bot.check_access()
-    count = len(api.sent())
+    owner_count = len(api.sent(OWNER))
     clock.advance(days=29, hours=1)
     await bot.check_access()
     await bot.check_access()                              # told once
-    assert len(api.sent()) == count + 2
-    assert "Доступ к боту закончится <b>09.12 15:00</b>" in api.last(PETR)["text"]
-    warning = api.last(OWNER)
-    assert "имеет доступ до 09.12 15:00" in warning["text"]
-    assert buttons(warning) == {"+7 дн.": f"ax:{PETR}.7", "+30 дн.": f"ax:{PETR}.30", "+90 дн.": f"ax:{PETR}.90",
-                                "Бессрочно": f"ax:{PETR}.0", "Удалить": f"du:{PETR}"}
+    warning = api.last(PETR)
+    assert "Доступ к боту закончится <b>09.12 15:00</b>" in warning["text"]
+    assert len([m for m in api.sent(PETR) if "закончится" in m["text"]]) == 1
 
     clock.advance(days=1)
     await bot.check_access()
     await bot.check_access()
-    assert "Доступ к боту закончился" in api.last(PETR)["text"]
-    assert "доступ закончился 09.12 15:00" in api.last(OWNER)["text"]
+    ended = api.last(PETR)
+    assert "Доступ к боту закончился" in ended["text"] and buttons(ended) == {"Попросить продлить": "pr"}
+    assert len(api.sent(OWNER)) == owner_count            # the owner hears nothing of it by itself
     assert sheets.to_read() == [] and sheets.readers(sheets.followed(PETR)[0]["id"]) == []
+    await bot.handle(message(OWNER, "/status"))
+    assert "<td>доступ закончился</td><td align=\"right\">1</td>" in api.last(OWNER)["text"]
+
+    await bot.handle(callback(PETR, "pr"))                 # the user asks: now the owner hears, once
+    assert api.calls[-1][1]["text"] == "Отправлено владельцу"
+    request = api.last(OWNER)
+    assert "просит продлить доступ, он закончился 09.12 15:00" in request["text"]
+    assert buttons(request) == {"+7 дн.": f"ax:{PETR}.7", "+30 дн.": f"ax:{PETR}.30", "+90 дн.": f"ax:{PETR}.90",
+                                "Бессрочно": f"ax:{PETR}.0", "Удалить": f"du:{PETR}"}
+    await bot.handle(callback(PETR, "pr"))
+    assert api.calls[-1][1]["text"] == "Уже попросил" and api.last(OWNER) == request
+
     await bot.handle(message(PETR, "/grades"))
     assert "Доступ к боту закончился" in api.last(PETR)["text"]
     await bot.handle(callback(PETR, "grades"))
@@ -101,7 +111,7 @@ async def test_access_for_a_while(bot, api, access, sheets, clock):
     await bot.handle(message(OWNER, "/users"))
     assert "09.12 15:00 (закончился)" in api.last(OWNER)["text"]
 
-    await bot.handle(callback(OWNER, f"ax:{PETR}.7"))       # from the end, or from now when it has ended
+    await bot.handle(callback(OWNER, buttons(request)["+7 дн."]))  # from the end, or from now when it has ended
     assert access.user(PETR)["expires_at"] == "2026-12-16T13:00:00+00:00"
     assert "Владелец продлил доступ: <b>до 16.12 16:00</b>" in api.last(PETR)["text"]
     assert len(sheets.to_read()) == 1
@@ -109,8 +119,11 @@ async def test_access_for_a_while(bot, api, access, sheets, clock):
     await bot.handle(callback(OWNER, buttons(api.last(OWNER))["Доступ: Пётр"]))
     view = api.last(OWNER)
     assert "Доступ Пётр (@petr_example): <b>16.12 16:00</b>" in view["text"]
+    assert access.user(PETR)["prolong_asked"] == 0           # prolonged: may ask again next time
     await bot.handle(callback(OWNER, buttons(view)["Бессрочно"]))
     assert access.user(PETR)["expires_at"] is None and "бессрочно" in api.last(PETR)["text"]
+    await bot.handle(callback(PETR, "pr"))
+    assert api.calls[-1][1]["text"] == "Доступ и так бессрочный"
 
 
 def test_codes_used_before_count_as_used(tmp_path):

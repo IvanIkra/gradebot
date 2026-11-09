@@ -47,7 +47,8 @@ create table if not exists users (
     grp_fixed integer not null default 0,  -- the group came with the invite code: only the owner moves the user
     rank integer not null default 0,  -- 0: a sheet new to the bot waits for the owner's approval; 1: trusted
     expires_at text,                -- the user's access ends then: no reads, no messages; null: for good
-    access_told integer not null default 0  -- 1: the end was told a day before, 2: the end was told
+    access_told integer not null default 0,  -- 1: the end was told a day before, 2: the end was told
+    prolong_asked integer not null default 0  -- the user asked the owner to prolong the access
 );
 create table if not exists sheets (
     id integer primary key,         -- short, for buttons
@@ -160,6 +161,7 @@ UPGRADES = (
     ("users", "grp_fixed", "integer not null default 0"),
     ("users", "expires_at", "text"),
     ("users", "access_told", "integer not null default 0"),
+    ("users", "prolong_asked", "integer not null default 0"),
     ("invites", "uses", "integer not null default 1"),
     ("invites", "used", "integer not null default 0", "update invites set used = 1 where used_by is not null"),
     ("invites", "access_days", "integer"),

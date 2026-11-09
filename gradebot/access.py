@@ -7,7 +7,8 @@ case, spaces and dashes, so «k7q f29» works too.
 
 A code lets in one person by default, or `uses` people, or any number (0) until it expires or is revoked. It may give
 access for a while: so many days from coming in, or until a date. When that ends the user is kept but the bot neither
-reads their sheets nor writes to them, until the owner prolongs the access or deletes them.
+reads their sheets nor writes to them, until the owner prolongs the access or deletes them. The user hears of the end
+a day before and when it comes, with a button that asks the owner to prolong it; the owner hears nothing else.
 """
 
 import datetime as dt
@@ -179,7 +180,8 @@ class Access:
             start = max(self.now(), clock.parse(user["expires_at"])) if user["expires_at"] else self.now()
             expires = clock.utc_iso(start + dt.timedelta(days=days))
         with self.db:
-            self.db.execute("update users set expires_at = ?, access_told = 0 where tg_id = ?", (expires, tg_id))
+            self.db.execute("update users set expires_at = ?, access_told = 0, prolong_asked = 0 where tg_id = ?",
+                            (expires, tg_id))
         return self.user(tg_id)
 
     def ending(self, within: dt.timedelta) -> tuple[list[dict], list[dict]]:
@@ -190,6 +192,10 @@ class Access:
                                (now, soon)).fetchall()
         ended = self.db.execute("select * from users where expires_at <= ? and access_told < 2", (now,)).fetchall()
         return [dict(row) for row in near], [dict(row) for row in ended]
+
+    def asked_prolong(self, tg_id: int) -> None:
+        with self.db:
+            self.db.execute("update users set prolong_asked = 1 where tg_id = ?", (tg_id,))
 
     def told(self, tg_id: int, stage: int) -> None:
         with self.db:

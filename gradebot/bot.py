@@ -105,12 +105,13 @@ class Bot(OwnerCommands, UserCommands, ReadNotices, Dialogs):
     # --- access for a while --------------------------------------------------------------------
 
     @staticmethod
-    def ended(lang: str) -> str:
-        return tr(lang, "Your access to the bot has ended. Ask the owner to prolong it.",
-                  "Доступ к боту закончился. Попроси владельца продлить его.")
+    def ended(lang: str) -> Doc:
+        return Doc().p(tr(lang, "Your access to the bot has ended.", "Доступ к боту закончился.")).buttons(
+            (tr(lang, "Ask to prolong", "Попросить продлить"), "pr", "primary"))
 
     async def watch_access(self) -> None:
-        """Every few minutes: tell whose access ends within a day, and whose has ended."""
+        """Every few minutes: tell the users whose access ends within a day, or has ended. The owner hears only
+        when a user asks to prolong it; /status and /users show the rest."""
         while True:
             try:
                 await self.check_access()
@@ -120,20 +121,31 @@ class Bot(OwnerCommands, UserCommands, ReadNotices, Dialogs):
 
     async def check_access(self) -> None:
         near, ended = self.access.ending(ACCESS_WARN)
-        owner = self.owner_lang
         for user in near:
             self.access.told(user["tg_id"], 1)
-            await self.tell(user, Doc().p(tr(user["lang"], "Your access to the bot ends ", "Доступ к боту закончится "),
-                                          b(self.when(user["expires_at"])), ". ",
-                                          tr(user["lang"], "Ask the owner if you need it longer.",
-                                             "Если нужен дольше, попроси владельца.")))
-            await self.tell_owner(self.prolong_doc(user, owner, tr(owner, " has access until ", " имеет доступ до "))
-                                  .buttons((tr(owner, "Delete", "Удалить"), f"du:{user['tg_id']}", "danger")))
+            lang = user["lang"]
+            await self.tell(user, Doc().p(tr(lang, "Your access to the bot ends ", "Доступ к боту закончится "),
+                                          b(self.when(user["expires_at"])), ".")
+                            .buttons((tr(lang, "Ask to prolong", "Попросить продлить"), "pr")))
         for user in ended:
             self.access.told(user["tg_id"], 2)
             await self.tell(user, self.ended(user["lang"]))
-            await self.tell_owner(self.prolong_doc(user, owner, tr(owner, ": access ended ", ": доступ закончился "))
-                                  .buttons((tr(owner, "Delete", "Удалить"), f"du:{user['tg_id']}", "danger")))
+
+    async def ask_prolong(self, user: dict) -> str:
+        """«Ask to prolong»: the owner hears it once until the access is prolonged."""
+        lang = user["lang"]
+        if not user["expires_at"]:
+            return tr(lang, "Your access is for good", "Доступ и так бессрочный")
+        if user["prolong_asked"]:
+            return tr(lang, "Already asked", "Уже попросил")
+        self.access.asked_prolong(user["tg_id"])
+        owner = self.owner_lang
+        what = tr(owner, " asks to prolong the access, which ends ", " просит продлить доступ, он заканчивается ") \
+            if not self.access.expired(user) else \
+            tr(owner, " asks to prolong the access, which ended ", " просит продлить доступ, он закончился ")
+        await self.tell_owner(self.prolong_doc(user, owner, what)
+                              .buttons((tr(owner, "Delete", "Удалить"), f"du:{user['tg_id']}", "danger")))
+        return tr(lang, "Sent to the owner", "Отправлено владельцу")
 
     def prolong_doc(self, user: dict, lang: str, what: str) -> Doc:
         """«Name has access until …» with the buttons that prolong it."""
@@ -195,8 +207,12 @@ class Bot(OwnerCommands, UserCommands, ReadNotices, Dialogs):
             elif sender["id"] == self.owner_id:
                 note = await self.owner_callback(chat, message_id, kind, arg, self.owner_lang)
             elif (user := self.access.user(sender["id"])) is not None:
-                note = tr(user["lang"], "Your access has ended", "Доступ закончился") if self.access.expired(user) \
-                    else await self.user_callback(chat, message_id, user, kind, arg)
+                if kind == "pr":
+                    note = await self.ask_prolong(user)
+                elif self.access.expired(user):
+                    note = tr(user["lang"], "Your access has ended", "Доступ закончился")
+                else:
+                    note = await self.user_callback(chat, message_id, user, kind, arg)
         await self.api.answer(cb["id"], note)
 
     # --- strangers -----------------------------------------------------------------------------

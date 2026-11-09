@@ -94,7 +94,8 @@ The SQLite database lives in `data/`; back it up while the bot is stopped (`dock
 The bot keeps each user's Telegram id and name, language, the full name they set, their sheets and grades. `/stop`
 erases all of it; the owner can erase a user too. Invite codes are stored as hashes only. When a user's access for a
 while ends, the bot stops reading their sheets and writing to them, and keeps their data until the owner prolongs
-the access or deletes them; both hear of it a day before.
+the access or deletes them. The user hears of it a day before and when it comes, with a button that asks the owner to
+prolong it; the owner hears of it only then, and sees the rest in `/status` and `/users`.
 
 To lay out a tab, Claude Haiku sees the tab's top rows (other students' rows may be among them) and one follower's
 row without their name. Sheets are open to anyone with the link anyway; who may use the bot is up to the owner,
