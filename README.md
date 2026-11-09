@@ -76,10 +76,12 @@ uv sync
 With Docker:
 
 ```sh
+mkdir -p data           # before the first start, or Docker creates it owned by root
 docker compose up -d --build
+docker compose logs -f
 ```
 
-The SQLite database lives in `data/`.
+The SQLite database lives in `data/`; back it up while the bot is stopped (`docker compose stop`).
 
 ## Privacy
 

@@ -1,0 +1,8 @@
+# Only what the image needs: the build context never carries .env, data/ or the local environment.
+*
+!pyproject.toml
+!uv.lock
+!.python-version
+!gradebot
+**/__pycache__
+.DS_Store
