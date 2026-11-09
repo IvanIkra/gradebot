@@ -20,6 +20,8 @@ COURSE_CHARS = 10       # the course in front of a work's label: "Calc HW 3" (23
 COURSE_FROM_TITLE = 8   # characters of the sheet's title that make its course when the owner set none
 SHEETS_PER_USER = 20
 STALE_AFTER = dt.timedelta(hours=12)
+# A user whose rows are looked for (`users u`; the parameter is now): a full name, access, not blocked the bot.
+READER = "u.student is not null and not u.paused and (u.expires_at is null or u.expires_at > ?)"
 
 
 class SheetError(ValueError):
@@ -166,10 +168,11 @@ class Sheets:
     # --- reading --------------------------------------------------------------------------------
 
     def readers(self, sheet: int) -> list[dict]:
-        """The followers whose rows are looked for: those with a full name who have not blocked the bot."""
+        """The followers whose rows are looked for: those with a full name and access who have not blocked the
+        bot."""
         rows = self.db.execute("select u.* from users u join subscriptions s on s.tg_id = u.tg_id "
-                               "where s.sheet = ? and u.student is not null and not u.paused order by u.tg_id",
-                               (sheet,))
+                               f"where s.sheet = ? and {READER} order by u.tg_id",
+                               (sheet, clock.utc_iso(self.now())))
         return [dict(row) for row in rows]
 
     def every(self) -> list[dict]:
@@ -181,9 +184,9 @@ class Sheets:
 
     def to_read(self) -> list[dict]:
         """Sheets with at least one reader: the others are not downloaded."""
-        rows = self.db.execute("select * from sheets s where exists (select 1 from subscriptions u join users r "
-                               "on r.tg_id = u.tg_id where u.sheet = s.id and r.student is not null and not r.paused) "
-                               "order by id")
+        rows = self.db.execute("select * from sheets s where exists (select 1 from subscriptions x join users u "
+                               f"on u.tg_id = x.tg_id where x.sheet = s.id and {READER}) order by id",
+                               (clock.utc_iso(self.now()),))
         return [dict(row) for row in rows]
 
     def reader(self, tg_id: int, sheet: int) -> str | None:

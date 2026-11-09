@@ -1,8 +1,13 @@
 """Who may use the bot: one-time invite codes from the owner, the users who came in with them, and a limit on wrong
 codes.
 
-A code is eight characters from an alphabet without look-alikes (no 0/O, 1/I/L), shown as XXXX-XXXX. Only its
-sha256 is stored; a code is compared without case, spaces and dashes, so «k7qf 29xm» works too.
+A code is six characters from an alphabet without look-alikes (no 0/O, 1/I/L), shown as XXX-XXX: 31^6, close to
+a billion, against five wrong tries an hour from one Telegram id. Only its sha256 is stored; a code is compared without
+case, spaces and dashes, so «k7q f29» works too.
+
+A code lets in one person by default, or `uses` people, or any number (0) until it expires or is revoked. It may give
+access for a while: so many days from coming in, or until a date. When that ends the user is kept but the bot neither
+reads their sheets nor writes to them, until the owner prolongs the access or deletes them.
 """
 
 import datetime as dt
@@ -17,10 +22,13 @@ from . import clock
 from .store import Store
 
 ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"
-CODE_LENGTH = 8
+CODE_LENGTH = 6
 NOTE_LENGTH = 40
 WRONG_LIMIT = 5                     # wrong codes from one Telegram id ...
 WRONG_WINDOW = dt.timedelta(hours=1)  # ... within this long make the bot silent to it for as long
+
+# A code that still lets people in; the parameter is now.
+OPEN = "revoked_at is null and expires_at > ? and (uses = 0 or used < uses)"
 
 # Ranks: what a user may do without the owner. A member's sheet that the bot does not read yet waits for the owner's
 # approval; a trusted user's is followed at once. A sheet the bot already reads costs nothing new: anyone follows it.
@@ -37,7 +45,7 @@ def code_hash(code: str) -> str:
 
 def new_code() -> str:
     raw = "".join(secrets.choice(ALPHABET) for _ in range(CODE_LENGTH))
-    return f"{raw[:4]}-{raw[4:]}"
+    return f"{raw[:3]}-{raw[3:]}"
 
 
 @dataclass(frozen=True)
@@ -55,50 +63,58 @@ class Access:
 
     # --- invites ------------------------------------------------------------------------------
 
-    def invite(self, note: str = "", group: int | None = None) -> tuple[int, str]:
-        """A new code, landing its user in `group` when given: (invite id, the code). The code is shown once and
-        never stored."""
+    def invite(self, note: str = "", group: int | None = None, uses: int = 1, lifetime: dt.timedelta | None = None,
+               access_days: int | None = None, access_until: dt.datetime | None = None) -> tuple[int, str]:
+        """A new code: (invite id, the code). It lands its users in `group`, lets in `uses` people (0: any number),
+        works for `lifetime` (INVITE_DAYS by default) and gives access for `access_days` from coming in or until
+        `access_until` (neither: for good). The code is shown once and never stored."""
         now = self.now()
         while True:
             code = new_code()
             try:
                 with self.db:
                     cur = self.db.execute(
-                        "insert into invites(code_hash, note, created_at, expires_at, grp) values(?, ?, ?, ?, ?)",
+                        "insert into invites(code_hash, note, created_at, expires_at, grp, uses, access_days, "
+                        "access_until) values(?, ?, ?, ?, ?, ?, ?, ?)",
                         (code_hash(code), " ".join(note.split())[:NOTE_LENGTH], clock.utc_iso(now),
-                         clock.utc_iso(now + dt.timedelta(days=self.invite_days)), group))
+                         clock.utc_iso(now + (lifetime or dt.timedelta(days=self.invite_days))), group, uses,
+                         access_days, clock.utc_iso(access_until) if access_until else None))
                 return cur.lastrowid, code
             except sqlite3.IntegrityError:  # the same code twice: try another one
                 continue
 
     def open_invites(self) -> list[dict]:
-        """Codes not used, not revoked and not expired, newest first."""
-        rows = self.db.execute("select i.*, g.name group_name from invites i left join groups g on g.id = i.grp "
-                               "where used_by is null and revoked_at is null and expires_at > ? order by i.id desc",
-                               (clock.utc_iso(self.now()),))
+        """Codes that still let people in: not used up, not revoked and not expired, newest first."""
+        rows = self.db.execute(f"select i.*, g.name group_name from invites i left join groups g on g.id = i.grp "
+                               f"where {OPEN} order by i.id desc", (clock.utc_iso(self.now()),))
         return [dict(row) for row in rows]
 
     def revoke(self, invite_id: int) -> bool:
         with self.db:
-            cur = self.db.execute("update invites set revoked_at = ? where id = ? and used_by is null "
-                                  "and revoked_at is null", (clock.utc_iso(self.now()), invite_id))
+            cur = self.db.execute(f"update invites set revoked_at = ? where id = ? and {OPEN}",
+                                  (clock.utc_iso(self.now()), invite_id, clock.utc_iso(self.now())))
         return cur.rowcount == 1
 
     def redeem(self, code: str, user: NewUser) -> dict | None:
-        """Register the user with a valid code and use it up: the invite row, or None for a wrong code (counted)."""
-        now = clock.utc_iso(self.now())
+        """Register the user with a valid code and count them in it: the invite row, or None for a wrong code
+        (counted)."""
+        moment = self.now()
+        now = clock.utc_iso(moment)
         with self.db:
-            row = self.db.execute("select * from invites where code_hash = ? and used_by is null "
-                                  "and revoked_at is null and expires_at > ?", (code_hash(code), now)).fetchone()
+            row = self.db.execute(f"select * from invites where code_hash = ? and {OPEN}",
+                                  (code_hash(code), now)).fetchone()
             if row is None:
                 self._count_wrong(user.tg_id)
                 return None
-            self.db.execute("update invites set used_by = ?, used_at = ? where id = ?", (user.tg_id, now, row["id"]))
-            self.db.execute("insert into users(tg_id, tg_name, username, lang, joined_at, invite_id) "
-                            "values(?, ?, ?, ?, ?, ?)",
-                            (user.tg_id, user.tg_name, user.username, user.lang, now, row["id"]))
+            self.db.execute("update invites set used = used + 1, used_by = ?, used_at = ? where id = ?",
+                            (user.tg_id, now, row["id"]))
+            expires = row["access_until"] or (clock.utc_iso(moment + dt.timedelta(days=row["access_days"]))
+                                              if row["access_days"] else None)
+            self.db.execute("insert into users(tg_id, tg_name, username, lang, joined_at, invite_id, expires_at) "
+                            "values(?, ?, ?, ?, ?, ?, ?)",
+                            (user.tg_id, user.tg_name, user.username, user.lang, now, row["id"], expires))
         self._wrong.pop(user.tg_id, None)
-        return {**dict(row), "used_by": user.tg_id, "used_at": now}
+        return {**dict(row), "used": row["used"] + 1, "used_by": user.tg_id, "used_at": now}
 
     # --- wrong codes ---------------------------------------------------------------------------
 
@@ -146,6 +162,38 @@ class Access:
         start, end = hours or (None, None)
         with self.db:
             self.db.execute("update users set quiet_from = ?, quiet_to = ? where tg_id = ?", (start, end, tg_id))
+
+    # --- access for a while -----------------------------------------------------------------------
+
+    def expired(self, user: dict) -> bool:
+        return bool(user.get("expires_at")) and user["expires_at"] <= clock.utc_iso(self.now())
+
+    def prolong(self, tg_id: int, days: int | None) -> dict | None:
+        """Access for `days` more, counted from its end or from now if it ended; None: for good. The user row."""
+        user = self.user(tg_id)
+        if user is None:
+            return None
+        if days is None:
+            expires = None
+        else:
+            start = max(self.now(), clock.parse(user["expires_at"])) if user["expires_at"] else self.now()
+            expires = clock.utc_iso(start + dt.timedelta(days=days))
+        with self.db:
+            self.db.execute("update users set expires_at = ?, access_told = 0 where tg_id = ?", (expires, tg_id))
+        return self.user(tg_id)
+
+    def ending(self, within: dt.timedelta) -> tuple[list[dict], list[dict]]:
+        """(users whose access ends within `within` and who were not told, users whose access ended and who were
+        not told). The caller tells them and marks it with `told`."""
+        now, soon = clock.utc_iso(self.now()), clock.utc_iso(self.now() + within)
+        near = self.db.execute("select * from users where expires_at > ? and expires_at <= ? and access_told < 1",
+                               (now, soon)).fetchall()
+        ended = self.db.execute("select * from users where expires_at <= ? and access_told < 2", (now,)).fetchall()
+        return [dict(row) for row in near], [dict(row) for row in ended]
+
+    def told(self, tg_id: int, stage: int) -> None:
+        with self.db:
+            self.db.execute("update users set access_told = ? where tg_id = ?", (stage, tg_id))
 
     def set_rank(self, tg_id: int, rank: int) -> bool:
         with self.db:

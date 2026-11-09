@@ -274,7 +274,7 @@ class UserCommands:
         user = self.access.user(user["tg_id"])
         group = self.groups.get(user["grp"])
         if first:
-            await self.api.edit(chat, message_id, self.welcome(lang, group, len(followed)))
+            await self.api.edit(chat, message_id, self.welcome(lang, group, len(followed), user["expires_at"]))
         else:
             doc = self.group_choice(user)
             if left or followed:

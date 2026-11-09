@@ -2,6 +2,7 @@
 
 Callbacks: `rq:<invite>` asks to revoke a code and `rv:<invite>` revokes it, `codes` and `users` redraw the lists,
 `du:<user>` asks to delete a user and `dy:<user>` deletes them, `rk:<user>` trusts a user or stops trusting them,
+`ae:<user>` offers to prolong a user's access and `ax:<user>.<days>` prolongs it (0: for good),
 `ug:<user>` offers the groups to move a user to and `um:<user>.<group>` moves them (group 0: none),
 `nr:<user>` resets a user's full name, `sa:<request>` and `sd:<request>` approve and decline a user's sheet,
 `groups` redraws the groups, `gs:<group>` shows a group's sheets, `gr:<group>.<sheet>` takes a sheet from a group,
@@ -9,7 +10,9 @@ Callbacks: `rq:<invite>` asks to revoke a code and `rv:<invite>` revokes it, `co
 /status, `iv:<minutes>` sets how often the sheets are read.
 """
 
+import datetime as dt
 import logging
+import re
 
 from . import clock, poller
 from .access import MEMBER, TRUSTED
@@ -72,6 +75,16 @@ class OwnerCommands:
             self.access.set_rank(number, MEMBER if user["rank"] >= TRUSTED else TRUSTED)
             await self.api.edit(chat, message_id, self.users_view(lang))
             return tr(lang, "Trusted", "Доверенный") if user["rank"] < TRUSTED else tr(lang, "Member", "Обычный")
+        elif kind == "ae" and number:
+            user = self.access.user(number)
+            if user is None:
+                return None
+            await self.api.edit(chat, message_id, self.access_view(user, lang))
+        elif kind == "ax":
+            who, _, days = arg.partition(".")
+            if not (who.isdigit() and days.isdigit()):
+                return None
+            return await self.prolong(chat, message_id, int(who), int(days) or None, lang)
         elif kind == "ug" and number:
             await self.api.edit(chat, message_id, self.move_view(number, lang))
         elif kind == "um":
@@ -121,11 +134,15 @@ class OwnerCommands:
 
     def owner_help(self, lang: str) -> Doc:
         return (Doc().h(tr(lang, "Owner's commands", "Команды владельца"))
-                .table([], [["/invite " + tr(lang, "[group] [note]", "[группа] [пометка]"),
-                             tr(lang, "a one-time invite code; with a group the user lands in it",
-                                "одноразовый код приглашения; с группой пользователь сразу в ней")],
-                            ["/codes", tr(lang, "unused codes, revoke", "неиспользованные коды, отзыв")],
-                            ["/users", tr(lang, "users: rank, delete", "пользователи: ранг, удаление")],
+                .table([], [["/invite " + tr(lang, "[group] [x5] [3d] [+30d] [note]",
+                                             "[группа] [x5] [3д] [+30д] [пометка]"),
+                             tr(lang, "an invite code: for how many people, how long it works, how long the access "
+                                      "lasts; /invite help explains",
+                                "код приглашения: на сколько человек, сколько действует, на сколько доступ; "
+                                "подробно — /invite help")],
+                            ["/codes", tr(lang, "open codes, revoke", "действующие коды, отзыв")],
+                            ["/users", tr(lang, "users: rank, group, access, delete",
+                                          "пользователи: ранг, группа, доступ, удаление")],
                             ["/groups " + tr(lang, "[name [new name]]", "[имя [новое имя]]"),
                              tr(lang, "groups: a new one, a new name; delete",
                                 "группы: новая, переименовать; удаление")],
@@ -147,15 +164,22 @@ class OwnerCommands:
     # --- invites ---------------------------------------------------------------------------------
 
     def invite_view(self, arg: str, lang: str) -> Doc:
-        """`/invite [group] [note]`: a first word that names a group is the group."""
-        first, _, rest = arg.strip().partition(" ")
-        group = self.groups.find(first) if first else None
-        note = rest if group else arg
-        invite_id, new = self.access.invite(note, group["id"] if group else None)
-        expires = self.access.db.execute("select expires_at from invites where id = ?", (invite_id,)).fetchone()[0]
-        doc = Doc().p(tr(lang, "Code", "Код"), f" «{note.strip()}»" if note.strip() else "",
-                      *([tr(lang, " to the group ", " в группу "), b(group["name"])] if group else []),
-                      tr(lang, ", works once until ", ", одноразовый, действует до "), self.when(expires), ":")
+        """`/invite [group] [x5|x*] [3d|12h] [+30d|+31.12] [note]`, in any order: see `invite_args`."""
+        if arg.strip().lower() in ("help", "?", "помощь"):
+            return self.invite_help(lang)
+        try:
+            args = invite_args(arg, self.groups.find, self.now(), self.zone)
+        except ValueError:
+            return self.invite_help(lang)
+        group = args.pop("group")
+        invite_id, new = self.access.invite(group=group["id"] if group else None, **args)
+        invite = next(inv for inv in self.access.open_invites() if inv["id"] == invite_id)
+        note = args["note"]
+        doc = Doc().p(tr(lang, "Code", "Код"), f" «{note}»" if note else "",
+                      *([tr(lang, " to the group ", " в группу "), b(group["name"])] if group else []), ": ",
+                      self.people(invite, lang), tr(lang, ", works until ", ", действует до "),
+                      self.when(invite["expires_at"]), tr(lang, ", access ", ", доступ "), self.term(invite, lang),
+                      ":")
         doc.p(code(new))
         if self.username:
             url = f"https://t.me/{self.username}?start={new}"
@@ -163,15 +187,51 @@ class OwnerCommands:
         return doc.p(i(tr(lang, "Only its hash is kept: this is the only time the code is shown.",
                           "Хранится только хэш: код показан один раз.")))
 
+    def invite_help(self, lang: str) -> Doc:
+        rows = [["x5", tr(lang, "up to 5 people; x* any number until it expires or is revoked; one by default",
+                          "до 5 человек; x* — сколько угодно, пока код не истёк или не отозван; без этого — один")],
+                [tr(lang, "3d, 12h", "3д, 12ч"),
+                 tr(lang, f"how long the code works; {self.access.invite_days} days by default",
+                    f"сколько действует код; по умолчанию {self.access.invite_days} дн.")],
+                [tr(lang, "+30d, +31.12", "+30д, +31.12"),
+                 tr(lang, "access for 30 days from coming in, or until 31.12; for good by default",
+                    "доступ на 30 дней после входа или до 31.12; по умолчанию бессрочно")],
+                [tr(lang, "group", "группа"), tr(lang, "the user lands in it and only you move them",
+                                                 "пользователь сразу в ней, переводишь только ты")]]
+        return (Doc().p(code(tr(lang, "/invite [group] [x5] [3d] [+30d] [note]",
+                                "/invite [группа] [x5] [3д] [+30д] [пометка]")), " — ",
+                        tr(lang, "in any order:", "в любом порядке:"))
+                .table([], rows)
+                .p(code(tr(lang, "/invite A1 x* 2d +31.12 seminar", "/invite A1 x* 2д +31.12 семинар"))))
+
+    @staticmethod
+    def people(invite: dict, lang: str) -> str:
+        """«one person», «3 of 5 people», «3 people, no limit»."""
+        if invite["uses"] == 1:
+            return tr(lang, "one person", "на одного")
+        if invite["uses"] == 0:
+            used = invite["used"]
+            return tr(lang, f"any number of people (in: {used})", f"без ограничения (вошли: {used})")
+        used, uses = invite["used"], invite["uses"]
+        return tr(lang, f"{used} of {uses} people in", f"вошли {used} из {uses}")
+
+    def term(self, invite: dict, lang: str) -> str:
+        if invite["access_days"]:
+            return tr(lang, f"for {invite['access_days']} days", f"на {invite['access_days']} дн.")
+        if invite["access_until"]:
+            return tr(lang, "until ", "до ") + self.when(invite["access_until"])
+        return tr(lang, "for good", "бессрочный")
+
     def codes_view(self, lang: str) -> Doc:
         invites = self.access.open_invites()
         if not invites:
-            return Doc().p(tr(lang, "No unused codes. ", "Неиспользованных кодов нет. "), "/invite")
-        doc = Doc().h(tr(lang, "Unused codes", "Неиспользованные коды")).table(
-            [tr(lang, "Note", "Пометка"), tr(lang, "Group", "Группа"), tr(lang, "Created", "Создан"),
-             tr(lang, "Expires", "Истекает")],
-            [[inv["note"] or "—", inv["group_name"] or "—", self.when(inv["created_at"]), self.when(inv["expires_at"])]
-             for inv in invites])
+            return Doc().p(tr(lang, "No open codes. ", "Действующих кодов нет. "), "/invite")
+        doc = Doc().h(tr(lang, "Open codes", "Действующие коды")).table(
+            [tr(lang, "Note", "Пометка"), tr(lang, "Group", "Группа"), tr(lang, "People", "Люди"),
+             tr(lang, "Access", "Доступ"), tr(lang, "Expires", "Истекает")],
+            [[inv["note"] or "—", inv["group_name"] or "—",
+              f"{inv['used']}/{inv['uses'] or '∞'}", self.term(inv, lang), self.when(inv["expires_at"])]
+             for inv in invites], [None, None, "right", None, None])
         revoke = tr(lang, "Revoke ", "Отозвать ")
         for inv in invites[:30]:
             doc.buttons((revoke + (inv["note"] or self.when(inv["created_at"])), f"rq:{inv['id']}", "danger"))
@@ -194,10 +254,11 @@ class OwnerCommands:
             return Doc().p(tr(lang, "No users yet. ", "Пользователей пока нет. "), "/invite")
         doc = Doc().h(tr(lang, "Users", "Пользователи") + f" · {len(users)}").table(
             [tr(lang, "Telegram", "Telegram"), tr(lang, "Full name", "ФИО"), tr(lang, "Sheets", "Таблиц"),
-             tr(lang, "Group", "Группа"), tr(lang, "Rank", "Ранг"), tr(lang, "Joined", "С"), tr(lang, "Code", "Код")],
+             tr(lang, "Group", "Группа"), tr(lang, "Rank", "Ранг"), tr(lang, "Joined", "С"),
+             tr(lang, "Access until", "Доступ до"), tr(lang, "Code", "Код")],
             [[self.who(u), u["student"] or "—", str(len(self.sheets.followed(u["tg_id"]))), self.group_cell(u, lang),
-              self.rank(u, lang), self.when(u["joined_at"]), u["note"] or "—"] for u in users],
-            [None, None, "right", None, None, None, None])
+              self.rank(u, lang), self.when(u["joined_at"]), self.until(u, lang), u["note"] or "—"] for u in users],
+            [None, None, "right", None, None, None, None, None])
         doc.p(i(tr(lang, "A member's sheet that the bot doesn't read yet waits for your approval; a trusted user's "
                          "doesn't.",
                    "Новую для бота таблицу обычного пользователя ты сначала одобряешь, доверенного — нет.")))
@@ -206,8 +267,35 @@ class OwnerCommands:
             rank = tr(lang, "Member: ", "Обычный: ") if trusted else tr(lang, "Trust: ", "Доверять: ")
             doc.buttons((rank + u["tg_name"], f"rk:{u['tg_id']}"),
                         *([(tr(lang, "Group: ", "Группа: ") + u["tg_name"], f"ug:{u['tg_id']}")] if groups else []),
+                        (tr(lang, "Access: ", "Доступ: ") + u["tg_name"], f"ae:{u['tg_id']}"),
                         (tr(lang, "Delete ", "Удалить ") + u["tg_name"], f"du:{u['tg_id']}", "danger"))
         return doc
+
+    def until(self, user: dict, lang: str) -> str:
+        if not user["expires_at"]:
+            return "∞"
+        ended = tr(lang, " (ended)", " (закончился)") if self.access.expired(user) else ""
+        return self.when(user["expires_at"]) + ended
+
+    def access_view(self, user: dict, lang: str) -> Doc:
+        doc = Doc().p(tr(lang, "Access of ", "Доступ "), self.who(user), ": ", b(self.until(user, lang)), ". ",
+                      tr(lang, "Days are added to its end, or to now when it has ended.",
+                         "Дни добавляются к концу доступа, а если он закончился — к сегодня."))
+        return doc.buttons(*self.prolong_buttons(user, lang)).buttons((tr(lang, "Back", "Назад"), "users"))
+
+    async def prolong(self, chat: int, message_id: int, tg_id: int, days: int | None, lang: str) -> str | None:
+        """Prolong a user's access (None: for good); the message turns into the users list, the user is told."""
+        user = self.access.prolong(tg_id, days)
+        if user is None:
+            return tr(lang, "Already deleted", "Уже удалён")
+        await self.api.edit(chat, message_id, self.users_view(lang))
+        ulang = user["lang"]
+        await self.tell(user, Doc().p(tr(ulang, "The owner prolonged your access: ", "Владелец продлил доступ: "),
+                                      b(tr(ulang, "until ", "до ") + self.when(user["expires_at"]))
+                                      if user["expires_at"] else b(tr(ulang, "for good", "бессрочно")), "."))
+        if user["student"]:  # back after it ended: read what was missed
+            self.read_soon(None, [s["id"] for s in self.sheets.followed(tg_id)])
+        return tr(lang, "Prolonged", "Продлено")
 
     def group_cell(self, user: dict, lang: str) -> str:
         """The user's group, «by code» when it came with the invite and only the owner changes it."""
@@ -581,3 +669,47 @@ class OwnerCommands:
             return tr(lang, "Nobody follows this sheet.", "На эту таблицу никто не подписан.")
         return tr(lang, "That's not a Google Sheets link: https://docs.google.com/spreadsheets/d/…",
                   "Это не ссылка на таблицу Google: https://docs.google.com/spreadsheets/d/…")
+
+
+UNITS = {"d": 24, "д": 24, "h": 1, "ч": 1}
+MAX_USES = 1000
+MAX_DAYS = 365
+
+
+def invite_args(text: str, find_group, now: dt.datetime, zone: dt.tzinfo) -> dict:
+    """`/invite` arguments in any order: a group's name (the first word that names one), `x5` or `x*` people, `3d`
+    or `12h` the code works, `+30d` or `+31.12[.2027]` of access; the other words are the note. ValueError for a
+    number out of range or a date gone."""
+    out: dict = {"group": None, "uses": 1, "lifetime": None, "access_days": None, "access_until": None}
+    note = []
+    for word in text.split():
+        low = word.lower()
+        if out["group"] is None and (group := find_group(word)) is not None:
+            out["group"] = group
+        elif found := re.fullmatch(r"[xх×](\d+|\*)", low):
+            out["uses"] = 0 if found[1] == "*" else int(found[1])
+            if not 0 <= out["uses"] <= MAX_USES or found[1] == "0":
+                raise ValueError(word)
+        elif found := re.fullmatch(r"(\d+)([dдhч])", low):
+            hours = int(found[1]) * UNITS[found[2]]
+            if not 1 <= hours <= MAX_DAYS * 24:
+                raise ValueError(word)
+            out["lifetime"] = dt.timedelta(hours=hours)
+        elif found := re.fullmatch(r"\+(\d+)[dд]", low):
+            out["access_days"] = int(found[1])
+            if not 1 <= out["access_days"] <= 10 * MAX_DAYS:
+                raise ValueError(word)
+        elif found := re.fullmatch(r"\+(\d{1,2})\.(\d{1,2})(?:\.(\d{2}|\d{4}))?", low):
+            day, month, year = int(found[1]), int(found[2]), found[3]
+            local = now.astimezone(zone)
+            year = (2000 + int(year) if len(year) == 2 else int(year)) if year else local.year
+            end = dt.datetime(year, month, day, 23, 59, tzinfo=zone)  # ValueError for 31.02
+            if found[3] is None and end <= local:
+                end = end.replace(year=year + 1)
+            if end <= local:
+                raise ValueError(word)
+            out["access_until"] = end
+        else:
+            note.append(word)
+    out["note"] = " ".join(note)
+    return out

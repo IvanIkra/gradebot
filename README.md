@@ -4,7 +4,7 @@ A Telegram bot that sends a small group of friends their new grades from the Goo
 user sets their full name as the sheets have it and picks the sheets; the bot reads them every 30 minutes (the owner may
 change it) and sends new and changed grades to a private chat.
 
-Access is by one-time invite codes from the owner. There is no sign-up and no public web part: the bot only talks
+Access is by invite codes from the owner: for one person or several, for a while or for good. There is no sign-up and no public web part: the bot only talks
 to the Bot API by long polling.
 
 > Status: early. Everything below is done and tested, but not yet run against live Telegram: deployment and a
@@ -24,9 +24,9 @@ to the Bot API by long polling.
 | user | `/lang [en\|ru]` | the bot's language |
 | user | `/help` | the commands |
 | user | `/stop` | erase everything the bot keeps about you and leave |
-| owner | `/invite [group] [note]` | a one-time invite code and its link; with a group the user lands in it, without one they pick it |
-| owner | `/codes` | unused codes, with a button to revoke each |
-| owner | `/users` | users, with buttons to trust each (their new sheets need no approval), move them to another group or delete them |
+| owner | `/invite [group] [x5\|x*] [3d] [+30d\|+31.12] [note]` | an invite code and its link, the words in any order: `x5` lets in up to 5 people and `x*` any number (one by default); `3d` or `12h` is how long the code works (`INVITE_DAYS` by default); `+30d` gives access for 30 days from coming in and `+31.12` until that date (for good by default). With a group the user lands in it, without one they pick it. `/invite help` explains |
+| owner | `/codes` | open codes: how many came in, the access they give; a button to revoke each |
+| owner | `/users` | users, with buttons to trust each (their new sheets need no approval), move them to another group, prolong their access or delete them |
 | owner | `/groups [name [new name]]` | groups: make one, rename one; buttons show a group's sheets or delete it |
 | owner | `/groupsheet [group] [link [short name]]` | a group's shared sheets: everyone in the group follows them, newcomers too |
 | owner | `/rename <link> [short name]` | a sheet's short name and hashtag (up to 10 characters) for everyone who follows it; without one, its title in Google |
@@ -89,7 +89,9 @@ The SQLite database lives in `data/`; back it up while the bot is stopped (`dock
 ## Privacy
 
 The bot keeps each user's Telegram id and name, language, the full name they set, their sheets and grades. `/stop`
-erases all of it; the owner can erase a user too. Invite codes are stored as hashes only.
+erases all of it; the owner can erase a user too. Invite codes are stored as hashes only. When a user's access for a
+while ends, the bot stops reading their sheets and writing to them, and keeps their data until the owner prolongs
+the access or deletes them; both hear of it a day before.
 
 To lay out a tab, Claude Haiku sees the tab's top rows (other students' rows may be among them) and one follower's
 row without their name. Sheets are open to anyone with the link anyway; who may use the bot is up to the owner,

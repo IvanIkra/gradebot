@@ -68,7 +68,7 @@ async def test_names_are_escaped(bot, api):
 
 async def test_codes_and_revoke(bot, api, access):
     await bot.handle(message(OWNER, "/codes"))
-    assert "Неиспользованных кодов нет" in api.last(OWNER)["text"]
+    assert "Действующих кодов нет" in api.last(OWNER)["text"]
     await invite(bot, api, "Аня")
     await bot.handle(message(OWNER, "/codes"))
     listing = api.last(OWNER)
@@ -79,7 +79,7 @@ async def test_codes_and_revoke(bot, api, access):
     await bot.handle(callback(OWNER, buttons(confirm)["Да, отозвать"]))
     assert access.open_invites() == []
     edited = api.last(OWNER)
-    assert edited["method"] == "editMessageText" and "Неиспользованных кодов нет" in edited["text"]
+    assert edited["method"] == "editMessageText" and "Действующих кодов нет" in edited["text"]
     assert ("answerCallbackQuery", {"callback_query_id": "cb1", "text": "Отозван"}) in api.calls
 
 

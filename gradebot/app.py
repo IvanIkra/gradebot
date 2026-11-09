@@ -64,7 +64,7 @@ class Service:
             bot.poller, bot.budget = poller, self.budget
             poller.on_read, self.budget.notify = bot.after_read, bot.budget_notice
             await self.set_commands(api)
-            await asyncio.gather(poll(api, bot, self.store), poller.run())
+            await asyncio.gather(poll(api, bot, self.store), poller.run(), bot.watch_access())
 
     async def set_commands(self, api: BotApi) -> None:
         for lang in ("en", "ru"):

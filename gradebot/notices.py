@@ -86,8 +86,8 @@ class ReadNotices:
             by_user.setdefault(event["tg_id"], []).append(event)
         for tg_id, events in by_user.items():
             user = self.access.user(tg_id)
-            if user is None or user["paused"]:
-                continue
+            if user is None or user["paused"] or self.access.expired(user):
+                continue  # an ended access: the grades wait for a week in case it is prolonged
             by_sheet: dict[int, list[dict]] = {}
             for event in events:
                 by_sheet.setdefault(event["sheet"], []).append(event)

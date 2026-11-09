@@ -6,10 +6,10 @@ ANNA = NewUser(2002, "Анна", None, "ru")
 
 def test_code_shape_and_normalising():
     code = new_code()
-    assert len(code) == 9 and code[4] == "-"
+    assert len(code) == 7 and code[3] == "-"
     assert not set(code.replace("-", "")) & set("01ILO")
-    assert normalise(" k7qf 29-xm ") == "K7QF29XM"
-    assert code_hash("k7qf 29xm") == code_hash("K7QF-29XM")
+    assert normalise(" k7q f-29 ") == "K7QF29"
+    assert code_hash("k7q f29") == code_hash("K7Q-F29")
 
 
 def test_redeem_once(access: Access, store):

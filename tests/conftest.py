@@ -78,7 +78,7 @@ def buttons(message: dict) -> dict[str, str]:
 
 
 def invite_code(text: str) -> str:
-    return re.search(r"<code>([A-Z0-9]{4}-[A-Z0-9]{4})</code>", text)[1]
+    return re.search(r"<code>([A-Z0-9]{3}-[A-Z0-9]{3})</code>", text)[1]
 
 
 def message(sender: int, text: str, lang: str = "ru", first: str = "Пётр", username: str | None = "petr_example",

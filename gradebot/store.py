@@ -22,10 +22,14 @@ create table if not exists invites (
     code_hash text not null unique, -- sha256 of the normalised code; the code itself is never stored
     note text not null default '',  -- who the owner meant it for
     created_at text not null,
-    expires_at text not null,
-    used_by integer,                -- Telegram id of the user who came in with it
+    expires_at text not null,       -- the code works until then
+    uses integer not null default 1,  -- how many people may come in with it; 0: any number until it expires
+    used integer not null default 0,  -- how many came in
+    used_by integer,                -- Telegram id of the last user who came in with it
     used_at text,
     revoked_at text,
+    access_days integer,            -- who comes in has access for this many days from then ...
+    access_until text,              -- ... or until then; both null: for good
     grp integer references groups(id) on delete set null  -- the group the user lands in; null: they pick one
 );
 create table if not exists users (
@@ -41,7 +45,9 @@ create table if not exists users (
     invite_id integer references invites(id),
     grp integer references groups(id) on delete set null,  -- the user's group: they follow its sheets
     grp_fixed integer not null default 0,  -- the group came with the invite code: only the owner moves the user
-    rank integer not null default 0 -- 0: a sheet new to the bot waits for the owner's approval; 1: trusted, it does not
+    rank integer not null default 0,  -- 0: a sheet new to the bot waits for the owner's approval; 1: trusted
+    expires_at text,                -- the user's access ends then: no reads, no messages; null: for good
+    access_told integer not null default 0  -- 1: the end was told a day before, 2: the end was told
 );
 create table if not exists sheets (
     id integer primary key,         -- short, for buttons
@@ -152,6 +158,12 @@ UPGRADES = (
     ("users", "rank", "integer not null default 0", "update users set rank = 1"),  # who was in before ranks is trusted
     ("users", "grp", "integer references groups(id) on delete set null"),
     ("users", "grp_fixed", "integer not null default 0"),
+    ("users", "expires_at", "text"),
+    ("users", "access_told", "integer not null default 0"),
+    ("invites", "uses", "integer not null default 1"),
+    ("invites", "used", "integer not null default 0", "update invites set used = 1 where used_by is not null"),
+    ("invites", "access_days", "integer"),
+    ("invites", "access_until", "text"),
     ("invites", "grp", "integer references groups(id) on delete set null"),
     ("sheet_requests", "course", "text not null default ''"),
     ("grade_items", "label_ru", "text"),

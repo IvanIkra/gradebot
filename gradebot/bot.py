@@ -10,7 +10,7 @@ import logging
 from collections.abc import Callable
 
 from . import clock
-from .access import Access, NewUser, normalise
+from .access import CODE_LENGTH, Access, NewUser, normalise
 from .grades import Grades
 from .groups import Groups
 from .i18n import guess, tr
@@ -26,6 +26,9 @@ from .users import UserCommands, group_buttons
 
 log = logging.getLogger(__name__)
 
+ACCESS_CHECK = 600                      # seconds between looks at whose access ends
+ACCESS_WARN = dt.timedelta(days=1)      # a user and the owner hear this long before the access ends
+PROLONG = (7, 30, 90)                   # days the owner's buttons add
 OWNER_LANG = "owner.lang"   # kv: the language of the owner's last message, for what the bot tells them unasked
 
 
@@ -98,6 +101,49 @@ class Bot(OwnerCommands, UserCommands, ReadNotices):
             " заблокировал бота: его таблицы на паузе, пока он снова не напишет боту."))
             .buttons((tr(lang, "Delete", "Удалить"), f"du:{user['tg_id']}", "danger")))
 
+    # --- access for a while --------------------------------------------------------------------
+
+    @staticmethod
+    def ended(lang: str) -> str:
+        return tr(lang, "Your access to the bot has ended. Ask the owner to prolong it.",
+                  "Доступ к боту закончился. Попроси владельца продлить его.")
+
+    async def watch_access(self) -> None:
+        """Every few minutes: tell whose access ends within a day, and whose has ended."""
+        while True:
+            try:
+                await self.check_access()
+            except Exception:
+                log.exception("checking access failed")
+            await asyncio.sleep(ACCESS_CHECK)
+
+    async def check_access(self) -> None:
+        near, ended = self.access.ending(ACCESS_WARN)
+        owner = self.owner_lang
+        for user in near:
+            self.access.told(user["tg_id"], 1)
+            await self.tell(user, Doc().p(tr(user["lang"], "Your access to the bot ends ", "Доступ к боту закончится "),
+                                          b(self.when(user["expires_at"])), ". ",
+                                          tr(user["lang"], "Ask the owner if you need it longer.",
+                                             "Если нужен дольше, попроси владельца.")))
+            await self.tell_owner(self.prolong_doc(user, owner, tr(owner, " has access until ", " имеет доступ до "))
+                                  .buttons((tr(owner, "Delete", "Удалить"), f"du:{user['tg_id']}", "danger")))
+        for user in ended:
+            self.access.told(user["tg_id"], 2)
+            await self.tell(user, self.ended(user["lang"]))
+            await self.tell_owner(self.prolong_doc(user, owner, tr(owner, ": access ended ", ": доступ закончился "))
+                                  .buttons((tr(owner, "Delete", "Удалить"), f"du:{user['tg_id']}", "danger")))
+
+    def prolong_doc(self, user: dict, lang: str, what: str) -> Doc:
+        """«Name has access until …» with the buttons that prolong it."""
+        doc = Doc().p(self.who(user), what, self.when(user["expires_at"]), ".")
+        return doc.buttons(*self.prolong_buttons(user, lang))
+
+    @staticmethod
+    def prolong_buttons(user: dict, lang: str) -> list[tuple]:
+        return [*[(tr(lang, f"+{days} days", f"+{days} дн."), f"ax:{user['tg_id']}.{days}") for days in PROLONG],
+                (tr(lang, "For good", "Бессрочно"), f"ax:{user['tg_id']}.0", "success")]
+
     # --- updates -------------------------------------------------------------------------------
 
     async def handle(self, update: dict) -> None:
@@ -120,6 +166,9 @@ class Bot(OwnerCommands, UserCommands, ReadNotices):
         if user is not None:
             if (full_name(sender), sender.get("username")) != (user["tg_name"], user["username"]) or user["paused"]:
                 self.access.update_profile(sender["id"], full_name(sender), sender.get("username"))
+            if self.access.expired(user):
+                await self.api.send(chat, self.ended(user["lang"]))
+                return
             await self.user_command(chat, user, cmd, arg)
             return
         await self.stranger(chat, sender, cmd, arg)
@@ -133,7 +182,8 @@ class Bot(OwnerCommands, UserCommands, ReadNotices):
             if sender["id"] == self.owner_id:
                 note = await self.owner_callback(chat, message_id, kind, arg, self.owner_lang)
             elif (user := self.access.user(sender["id"])) is not None:
-                note = await self.user_callback(chat, message_id, user, kind, arg)
+                note = tr(user["lang"], "Your access has ended", "Доступ закончился") if self.access.expired(user) \
+                    else await self.user_callback(chat, message_id, user, kind, arg)
         await self.api.answer(cb["id"], note)
 
     # --- strangers -----------------------------------------------------------------------------
@@ -144,7 +194,8 @@ class Bot(OwnerCommands, UserCommands, ReadNotices):
         if self.access.locked(tg_id):
             return
         lang = guess(sender.get("language_code"))
-        candidate = arg if cmd == "/start" else (arg if not cmd and len(normalise(arg)) == 8 else "")
+        pasted = not cmd and len(normalise(arg)) in (CODE_LENGTH, 8)  # 8: codes from before
+        candidate = arg if cmd == "/start" or pasted else ""
         if candidate:
             new = NewUser(tg_id, full_name(sender), sender.get("username"), lang)
             if (invite := self.access.redeem(candidate, new)) is not None:
@@ -152,13 +203,16 @@ class Bot(OwnerCommands, UserCommands, ReadNotices):
                 _, followed = self.groups.join(tg_id, group["id"]) if group else (0, [])
                 if group:
                     self.groups.fix(tg_id)
-                await self.api.send(chat, self.welcome(lang, group, len(followed)))
                 user = self.access.user(tg_id)
+                await self.api.send(chat, self.welcome(lang, group, len(followed), user["expires_at"]))
                 note = f" «{invite['note']}»" if invite["note"] else ""
                 owner = self.owner_lang
+                count = f" ({invite['used']}/{invite['uses'] or '∞'})" if invite["uses"] != 1 else ""
                 await self.tell_owner(
-                    Doc().p(self.who(user), tr(owner, " came in with the code", " вошёл по коду"), note,
-                            *([tr(owner, ", group ", ", группа "), group["name"]] if group else []))
+                    Doc().p(self.who(user), tr(owner, " came in with the code", " вошёл по коду"), note, count,
+                            *([tr(owner, ", group ", ", группа "), group["name"]] if group else []),
+                            *([tr(owner, ", access until ", ", доступ до "), self.when(user["expires_at"])]
+                              if user["expires_at"] else []))
                     .buttons((tr(owner, "Delete", "Удалить"), f"du:{tg_id}", "danger")))
                 return
             if self.access.locked(tg_id):
@@ -166,11 +220,13 @@ class Bot(OwnerCommands, UserCommands, ReadNotices):
         await self.api.send(chat, tr(lang, "You need an invite code to use this bot.",
                                      "Чтобы пользоваться ботом, нужен код приглашения."))
 
-    def welcome(self, lang: str, group: dict | None, followed: int) -> Doc:
+    def welcome(self, lang: str, group: dict | None, followed: int, expires: str | None = None) -> Doc:
         """The first message: the user's group, or a choice of one when the code carried none, and the full name."""
         doc = (Doc().h(tr(lang, "You're in", "Ты в деле"))
                .p(tr(lang, "I'll send you new grades from the Google Sheets of your courses as soon as they appear.",
                      "Я буду присылать новые оценки из таблиц Google твоих курсов, как только они появятся.")))
+        if expires:
+            doc.p(tr(lang, "Your access lasts until ", "Доступ открыт до "), b(self.when(expires)), ".")
         if group:
             doc.p(tr(lang, "Your group: ", "Твоя группа: "), b(group["name"]), ". ",
                   tr(lang, f"You follow its shared sheets: {followed}. The list is in /sheets.",
