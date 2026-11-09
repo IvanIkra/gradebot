@@ -196,3 +196,33 @@ def test_shared_sheets_from_before_groups_become_one_group(tmp_path):
     assert "group_sheet" not in {row["name"] for row in store.db.execute("pragma table_info(sheets)")}
     store.close()
     Store(path).close()
+
+
+async def test_a_group_from_the_code_is_changed_by_the_owner_only(bot, api, access, sheets):
+    a1, b2 = bot.groups.create("A1")["id"], bot.groups.create("B2")["id"]
+    bot.groups.add_sheet(a1, CALC, OWNER)
+    bot.groups.add_sheet(b2, ALG, OWNER)
+    await bot.handle(message(OWNER, "/invite A1"))
+    await bot.handle(message(PETR, f"/start {invite_code(api.last(OWNER)['text'])}"))
+    await bot.handle(message(PETR, "/group"))
+    view = api.last(PETR)
+    assert "перевести тебя в другую может только владелец" in view["text"] and buttons(view) == {}
+    await bot.handle(callback(PETR, f"gp:{b2}"))
+    assert api.calls[-1][1]["text"] == "Группу меняет только владелец" and access.user(PETR)["grp"] == a1
+
+    await bot.handle(message(OWNER, "/users"))
+    listing = api.last(OWNER)
+    assert "A1 (по коду)" in listing["text"]
+    await bot.handle(callback(OWNER, buttons(listing)["Группа: Пётр"]))
+    choice = api.last(OWNER)
+    assert "Перевести Пётр (@petr_example) из <b>A1</b> в:" in choice["text"]
+    assert buttons(choice) == {"B2": f"um:{PETR}.{b2}", "Без группы": f"um:{PETR}.0", "Отмена": "users"}
+    await bot.handle(callback(OWNER, f"um:{PETR}.{b2}"))
+    assert access.user(PETR)["grp"] == b2 and "B2 (по коду)" in api.last(OWNER)["text"]
+    assert "Владелец перевёл тебя в группу <b>B2</b>" in api.last(PETR)["text"]
+    assert [s["url"] for s in sheets.followed(PETR)] == [sheets.by_url(ALG)["url"]]
+
+    await bot.handle(callback(OWNER, f"um:{PETR}.0"))   # in no group, the user picks one themselves
+    assert "Владелец вывел тебя из группы" in api.last(PETR)["text"]
+    await bot.handle(callback(PETR, f"gp:{a1}"))
+    assert access.user(PETR)["grp"] == a1

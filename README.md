@@ -17,19 +17,19 @@ to the Bot API by long polling.
 | anyone | `/start <code>` | come in with an invite code (the `t.me/<bot>?start=<code>` link does the same) |
 | user | `/grades` | your grades by sheet, the new ones of the last week marked; "Wrong" reports a bad layout to the owner |
 | user | `/name Surname Name` | your full name exactly as the sheets have it; the owner sees it and may reset it |
-| user | `/sheet <link>` | follow a Google Sheet (open to anyone with the link); a member's sheet the bot does not read yet waits for the owner's approval |
+| user | `/sheet <link> [course]` | follow a Google Sheet (open to anyone with the link); a member's sheet the bot does not read yet waits for the owner's approval. The course is the sheet's short name and hashtag, kept only for a sheet new to the bot; without it the bot names the sheet by its title in Google |
 | user | `/sheets` | your sheets: when each was read, how many grades, what is wrong; check now or unfollow |
-| user | `/group` | your group, with buttons to move to another one: you follow the shared sheets of your group |
+| user | `/group` | your group, with buttons to move to another one: you follow the shared sheets of your group. A group that came with the invite code is changed by the owner only |
 | user | `/quiet [23-8\|off]` | quiet hours: messages then come without a sound; 23:00–8:00 by default |
 | user | `/lang [en\|ru]` | the bot's language |
 | user | `/help` | the commands |
 | user | `/stop` | erase everything the bot keeps about you and leave |
 | owner | `/invite [group] [note]` | a one-time invite code and its link; with a group the user lands in it, without one they pick it |
 | owner | `/codes` | unused codes, with a button to revoke each |
-| owner | `/users` | users, with buttons to trust each (their new sheets need no approval) or delete them |
+| owner | `/users` | users, with buttons to trust each (their new sheets need no approval), move them to another group or delete them |
 | owner | `/groups [name [new name]]` | groups: make one, rename one; buttons show a group's sheets or delete it |
 | owner | `/groupsheet [group] [link [course]]` | a group's shared sheets: everyone in the group follows them, newcomers too |
-| owner | `/course <link> <course>` | a sheet's course, the short name in front of its works (up to 10 characters) |
+| owner | `/course <link> [course]` | a sheet's course, its short name and hashtag (up to 10 characters); without one, the sheet's title in Google |
 | owner | `/relayout <link>` | drop a sheet's cached layout: its tabs are laid out again at once |
 | owner | `/status` | sheets and their errors, users, Haiku spending today and this month |
 | owner | `/interval [minutes]` | how often the sheets are read: 30 minutes by default, 5 to 240 |

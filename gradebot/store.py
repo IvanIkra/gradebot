@@ -40,6 +40,7 @@ create table if not exists users (
     joined_at text not null,
     invite_id integer references invites(id),
     grp integer references groups(id) on delete set null,  -- the user's group: they follow its sheets
+    grp_fixed integer not null default 0,  -- the group came with the invite code: only the owner moves the user
     rank integer not null default 0 -- 0: a sheet new to the bot waits for the owner's approval; 1: trusted, it does not
 );
 create table if not exists sheets (
@@ -65,6 +66,7 @@ create table if not exists sheet_requests (   -- sheets new to the bot that a us
     tg_id integer not null references users(tg_id) on delete cascade,
     sheet_id text not null,         -- the id in the Google link
     url text not null,
+    course text not null default '',  -- the course the user gave: the sheet gets it if it is approved
     created_at text not null,
     unique (tg_id, sheet_id)
 );
@@ -149,7 +151,9 @@ UPGRADES = (
     ("subscriptions", "tabs", "integer not null default 0"),
     ("users", "rank", "integer not null default 0", "update users set rank = 1"),  # who was in before ranks is trusted
     ("users", "grp", "integer references groups(id) on delete set null"),
+    ("users", "grp_fixed", "integer not null default 0"),
     ("invites", "grp", "integer references groups(id) on delete set null"),
+    ("sheet_requests", "course", "text not null default ''"),
     ("grade_items", "label_ru", "text"),
     ("grade_events", "label_ru", "text"),
 )

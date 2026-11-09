@@ -3,7 +3,7 @@ import pytest
 from gradebot.access import TRUSTED
 
 from .conftest import OWNER, buttons, callback, invite_code, message
-from .test_sheets import CALC
+from .test_sheets import ALG, CALC
 
 PETR = 2001
 
@@ -88,3 +88,31 @@ async def test_stop_drops_own_sheets(bot, api, sheets, access, petr):
     sheet_id = sheets.followed(PETR)[0]["id"]
     await bot.handle(callback(PETR, "stop!"))
     assert sheets.get(sheet_id) is None
+
+
+async def test_a_course_for_a_sheet_new_to_the_bot(bot, api, sheets, access, petr):
+    await bot.handle(message(PETR, "/help"))
+    assert "/sheet &lt;ссылка&gt; [курс]" in api.last(PETR)["text"] and "название таблицы в Google" in \
+        api.last(PETR)["text"]
+    await bot.handle(message(PETR, "/sheet"))
+    assert "Без курса бот берёт название таблицы в Google" in api.last(PETR)["text"]
+    access.set_rank(PETR, TRUSTED)
+    await bot.handle(message(PETR, f"/sheet {CALC} Слишком длинный"))
+    assert "В курсе не больше 10 символов" in api.last(PETR)["text"] and sheets.by_url(CALC) is None
+    await bot.handle(message(PETR, f"/sheet {CALC} Матан"))
+    assert "Подписал на <b>Матан</b>" in api.last(PETR)["text"] and sheets.by_url(CALC)["course"] == "Матан"
+
+    await bot.handle(message(OWNER, "/invite Аня"))
+    await bot.handle(message(2002, f"/start {invite_code(api.last(OWNER)['text'])}", first="Анна"))
+    await bot.handle(message(2002, f"/sheet {CALC} Анализ"))  # the bot reads it already: the course stays
+    assert "имя остаётся прежним: <b>Матан</b>" in api.last(2002)["text"]
+    assert sheets.by_url(CALC)["course"] == "Матан"
+
+    await bot.handle(message(2002, f"/sheet {ALG} Алгебра"))   # a member: the course waits with the request
+    request = api.last(OWNER)
+    assert ", курс <b>Алгебра</b>" in request["text"]
+    await bot.handle(callback(OWNER, buttons(request)["Одобрить"]))
+    assert sheets.by_url(ALG)["course"] == "Алгебра"
+
+    await bot.handle(message(OWNER, f"/course {ALG}"))
+    assert "Курса нет" in api.last(OWNER)["text"] and "первые 8 символов" in api.last(OWNER)["text"]

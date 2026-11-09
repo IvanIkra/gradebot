@@ -150,6 +150,8 @@ class Bot(OwnerCommands, UserCommands, ReadNotices):
             if (invite := self.access.redeem(candidate, new)) is not None:
                 group = self.groups.get(invite["grp"])
                 _, followed = self.groups.join(tg_id, group["id"]) if group else (0, [])
+                if group:
+                    self.groups.fix(tg_id)
                 await self.api.send(chat, self.welcome(lang, group, len(followed)))
                 user = self.access.user(tg_id)
                 note = f" «{invite['note']}»" if invite["note"] else ""

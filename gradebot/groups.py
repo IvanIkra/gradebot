@@ -1,5 +1,6 @@
 """Groups of users and their shared sheets (spec §4.2). The owner makes groups and gives each its sheets; a user is in
-one group or none, picked at registration (the invite code may carry it) and changed with /group.
+one group or none, picked at registration and changed with /group. A group that came with the invite code is fixed:
+only the owner moves such a user (`fixed`).
 
 Everyone in a group follows its sheets: when they join it and when the owner adds a sheet to it. A user may still
 unfollow a group sheet. Leaving a group unfollows its sheets, except those the new group has too; the grades of
@@ -101,6 +102,16 @@ class Groups:
         return cur.rowcount == 1
 
     # --- users -------------------------------------------------------------------------------------
+
+    def fix(self, tg_id: int) -> None:
+        """The user's group came with their invite code: they don't change it themselves."""
+        with self.db:
+            self.db.execute("update users set grp_fixed = 1 where tg_id = ?", (tg_id,))
+
+    @staticmethod
+    def fixed(user: dict) -> bool:
+        """Only the owner moves the user: their group came with the code and is still there."""
+        return bool(user["grp_fixed"] and user["grp"])
 
     def join(self, tg_id: int, gid: int | None) -> tuple[int, list[int]]:
         """Move a user to a group, or to none: (sheets of the old group unfollowed, the new group's sheets they

@@ -55,13 +55,14 @@ class Sheets:
     def __init__(self, store: Store, now: Callable[[], dt.datetime] = clock.now_utc):
         self.db, self.now = store.db, now
 
-    def upsert(self, url: str, by: int) -> int:
+    def upsert(self, url: str, by: int, course_text: str | None = None) -> int:
+        """The sheet's row id, adding it when it is new to the bot: then with `course_text` as its course."""
         sid, link = parse_url(url)
         row = self.db.execute("select id from sheets where sheet_id = ?", (sid,)).fetchone()
         if row is not None:
             return row["id"]
-        return self.db.execute("insert into sheets(sheet_id, url, added_by, added_at) values(?, ?, ?, ?)",
-                               (sid, link, by, clock.utc_iso(self.now()))).lastrowid
+        return self.db.execute("insert into sheets(sheet_id, url, course, added_by, added_at) values(?, ?, ?, ?, ?)",
+                               (sid, link, course(course_text or ""), by, clock.utc_iso(self.now()))).lastrowid
 
     def get(self, sheet: int) -> dict | None:
         row = self.db.execute("select * from sheets where id = ?", (sheet,)).fetchone()
@@ -80,10 +81,11 @@ class Sheets:
                                "(select count(*) from sheet_requests where tg_id = ?) n",
                                (tg_id, tg_id)).fetchone()["n"]
 
-    def follow(self, tg_id: int, url: str) -> tuple[dict, bool]:
-        """(the sheet, True when it is new to the user). SheetError for a bad link or too many sheets."""
+    def follow(self, tg_id: int, url: str, course_text: str | None = None) -> tuple[dict, bool]:
+        """(the sheet, True when it is new to the user). The course is set only for a sheet new to the bot: after
+        that it is the owner's. SheetError for a bad link or course, or too many sheets."""
         with self.db:
-            sheet = self.upsert(url, tg_id)
+            sheet = self.upsert(url, tg_id, course_text)
             if self.db.execute("select 1 from subscriptions where tg_id = ? and sheet = ?", (tg_id, sheet)).fetchone():
                 return self.get(sheet), False
             self.db.execute("delete from sheet_requests where tg_id = ? and sheet_id = ?",
@@ -110,9 +112,11 @@ class Sheets:
 
     # --- requests: a member's sheets new to the bot ------------------------------------------------
 
-    def ask(self, tg_id: int, url: str) -> tuple[dict, bool]:
-        """(the request, True when it is new). SheetError for a bad link or too many sheets."""
+    def ask(self, tg_id: int, url: str, course_text: str | None = None) -> tuple[dict, bool]:
+        """(the request, True when it is new), with the course the sheet gets if it is approved. SheetError for a bad
+        link or course, or too many sheets."""
         sid, link = parse_url(url)
+        wanted = course(course_text or "")
         with self.db:
             row = self.db.execute("select * from sheet_requests where tg_id = ? and sheet_id = ?",
                                   (tg_id, sid)).fetchone()
@@ -120,8 +124,9 @@ class Sheets:
                 return dict(row), False
             if self._count(tg_id) >= SHEETS_PER_USER:
                 raise SheetError(f"at most {SHEETS_PER_USER} sheets")
-            rid = self.db.execute("insert into sheet_requests(tg_id, sheet_id, url, created_at) values(?, ?, ?, ?)",
-                                  (tg_id, sid, link, clock.utc_iso(self.now()))).lastrowid
+            cur = self.db.execute("insert into sheet_requests(tg_id, sheet_id, url, course, created_at) "
+                                  "values(?, ?, ?, ?, ?)", (tg_id, sid, link, wanted, clock.utc_iso(self.now())))
+        rid = cur.lastrowid
         return self.request(rid), True
 
     def request(self, rid: int) -> dict | None:
@@ -138,7 +143,7 @@ class Sheets:
         found = self.request(rid)
         if found is None:
             return None
-        sheet, _ = self.follow(found["tg_id"], found["url"])  # drops the request
+        sheet, _ = self.follow(found["tg_id"], found["url"], found["course"])  # drops the request
         return found, sheet
 
     def drop_request(self, rid: int, tg_id: int | None = None) -> dict | None:
