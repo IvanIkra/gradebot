@@ -22,6 +22,10 @@ NOTE_LENGTH = 40
 WRONG_LIMIT = 5                     # wrong codes from one Telegram id ...
 WRONG_WINDOW = dt.timedelta(hours=1)  # ... within this long make the bot silent to it for as long
 
+# Ranks: what a user may do without the owner. A member's sheet that the bot does not read yet waits for the owner's
+# approval; a trusted user's is followed at once. A sheet the bot already reads costs nothing new: anyone follows it.
+MEMBER, TRUSTED = 0, 1
+
 
 def normalise(code: str) -> str:
     return "".join(ch for ch in code.upper() if ch.isalnum())
@@ -139,6 +143,11 @@ class Access:
         start, end = hours or (None, None)
         with self.db:
             self.db.execute("update users set quiet_from = ?, quiet_to = ? where tg_id = ?", (start, end, tg_id))
+
+    def set_rank(self, tg_id: int, rank: int) -> bool:
+        with self.db:
+            cur = self.db.execute("update users set rank = ? where tg_id = ?", (rank, tg_id))
+        return cur.rowcount == 1
 
     def set_paused(self, tg_id: int, paused: bool) -> None:
         with self.db:

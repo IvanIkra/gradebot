@@ -27,3 +27,17 @@ def test_delete_prefix(store):
     for key in ("layout:a_b:1", "layout:a_b:2", "layout:aXb:1"):
         store.put_json(key, 1)
     assert store.delete_prefix("layout:a_b:") == 2 and store.get_json("layout:aXb:1") == 1
+
+
+def test_users_before_ranks_are_trusted(tmp_path):
+    path = tmp_path / "old.db"
+    store = Store(path)
+    store.db.execute("insert into users(tg_id, tg_name, lang, joined_at) values(1, 'Тест', 'ru', 't')")
+    store.db.commit()
+    store.db.execute("alter table users drop column rank")
+    store.close()
+    store = Store(path)
+    assert store.db.execute("select rank from users").fetchone()[0] == 1
+    store.db.execute("insert into users(tg_id, tg_name, lang, joined_at) values(2, 'Новый', 'ru', 't')")
+    assert store.db.execute("select rank from users where tg_id = 2").fetchone()[0] == 0
+    store.close()

@@ -1,6 +1,9 @@
 """The Google Sheets users follow. A sheet is one row for everyone who follows it, so it is downloaded and laid out
 once (spec §5.1); `subscriptions` say who follows what.
 
+A member's sheet the bot does not read yet is a request until the owner approves it (`access.MEMBER`); it counts
+towards the user's limit while it waits.
+
 Group sheets are the owner's: every user follows them from the day they join, and every user follows a sheet the
 moment the owner makes it a group one. A user may still unfollow a group sheet. A sheet nobody follows and that is
 not a group sheet is dropped.
@@ -72,13 +75,21 @@ class Sheets:
 
     # --- a user's sheets -------------------------------------------------------------------------
 
+    def _count(self, tg_id: int) -> int:
+        """The user's sheets and requests: the limit is on both."""
+        return self.db.execute("select (select count(*) from subscriptions where tg_id = ?) + "
+                               "(select count(*) from sheet_requests where tg_id = ?) n",
+                               (tg_id, tg_id)).fetchone()["n"]
+
     def follow(self, tg_id: int, url: str) -> tuple[dict, bool]:
         """(the sheet, True when it is new to the user). SheetError for a bad link or too many sheets."""
         with self.db:
             sheet = self._upsert(url, tg_id)
             if self.db.execute("select 1 from subscriptions where tg_id = ? and sheet = ?", (tg_id, sheet)).fetchone():
                 return self.get(sheet), False
-            if len(self.followed(tg_id)) >= SHEETS_PER_USER:
+            self.db.execute("delete from sheet_requests where tg_id = ? and sheet_id = ?",
+                            (tg_id, self.get(sheet)["sheet_id"]))
+            if self._count(tg_id) >= SHEETS_PER_USER:
                 raise SheetError(f"at most {SHEETS_PER_USER} sheets")
             self.db.execute("insert into subscriptions(tg_id, sheet, added_at) values(?, ?, ?)",
                             (tg_id, sheet, clock.utc_iso(self.now())))
@@ -96,6 +107,48 @@ class Sheets:
                                "join subscriptions u on u.sheet = s.id where u.tg_id = ? "
                                "order by s.group_sheet desc, s.id", (tg_id,))
         return [dict(row) for row in rows]
+
+    # --- requests: a member's sheets new to the bot ------------------------------------------------
+
+    def ask(self, tg_id: int, url: str) -> tuple[dict, bool]:
+        """(the request, True when it is new). SheetError for a bad link or too many sheets."""
+        sid, link = parse_url(url)
+        with self.db:
+            row = self.db.execute("select * from sheet_requests where tg_id = ? and sheet_id = ?",
+                                  (tg_id, sid)).fetchone()
+            if row is not None:
+                return dict(row), False
+            if self._count(tg_id) >= SHEETS_PER_USER:
+                raise SheetError(f"at most {SHEETS_PER_USER} sheets")
+            rid = self.db.execute("insert into sheet_requests(tg_id, sheet_id, url, created_at) values(?, ?, ?, ?)",
+                                  (tg_id, sid, link, clock.utc_iso(self.now()))).lastrowid
+        return self.request(rid), True
+
+    def request(self, rid: int) -> dict | None:
+        row = self.db.execute("select * from sheet_requests where id = ?", (rid,)).fetchone()
+        return dict(row) if row else None
+
+    def requests(self, tg_id: int | None = None) -> list[dict]:
+        """Waiting requests, of one user or of everyone, oldest first."""
+        where, args = ("where tg_id = ?", (tg_id,)) if tg_id is not None else ("", ())
+        return [dict(row) for row in self.db.execute(f"select * from sheet_requests {where} order by id", args)]
+
+    def approve(self, rid: int) -> tuple[dict, dict] | None:
+        """Follow the requested sheet: (the request, the sheet), or None when it is gone (handled, the user left)."""
+        found = self.request(rid)
+        if found is None:
+            return None
+        sheet, _ = self.follow(found["tg_id"], found["url"])  # drops the request
+        return found, sheet
+
+    def drop_request(self, rid: int, tg_id: int | None = None) -> dict | None:
+        """Decline or cancel a request: the request, or None when it is gone (or is not this user's)."""
+        found = self.request(rid)
+        if found is None or (tg_id is not None and found["tg_id"] != tg_id):
+            return None
+        with self.db:
+            self.db.execute("delete from sheet_requests where id = ?", (rid,))
+        return found
 
     def follow_group(self, tg_id: int) -> int:
         """A new user follows every group sheet; the number of them."""

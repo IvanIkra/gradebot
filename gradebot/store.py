@@ -30,7 +30,8 @@ create table if not exists users (
     quiet_to integer default 8,
     paused integer not null default 0,  -- the user blocked the bot
     joined_at text not null,
-    invite_id integer references invites(id)
+    invite_id integer references invites(id),
+    rank integer not null default 0 -- 0: a sheet new to the bot waits for the owner's approval; 1: trusted, it does not
 );
 create table if not exists sheets (
     id integer primary key,         -- short, for buttons
@@ -45,6 +46,14 @@ create table if not exists sheets (
     error text,                     -- why the last read failed: "<kind>: <detail>", see poller.explain
     error_since text,               -- failing since
     told integer not null default 0 -- failing for 12 hours was told to the owner and the followers
+);
+create table if not exists sheet_requests (   -- sheets new to the bot that a user asked for, waiting for the owner
+    id integer primary key,
+    tg_id integer not null references users(tg_id) on delete cascade,
+    sheet_id text not null,         -- the id in the Google link
+    url text not null,
+    created_at text not null,
+    unique (tg_id, sheet_id)
 );
 create table if not exists subscriptions (
     tg_id integer not null references users(tg_id) on delete cascade,
@@ -112,7 +121,8 @@ create table if not exists llm_runs (       -- every Haiku call, a failed one to
 create index if not exists llm_runs_at on llm_runs(at);
 """
 
-# (table, column, definition): columns a later stage added to a table an earlier one created.
+# (table, column, definition[, what to fill the old rows with]): columns a later stage added to a table an earlier one
+# created.
 UPGRADES = (
     ("sheets", "ok_at", "text"),
     ("sheets", "error", "text"),
@@ -122,6 +132,7 @@ UPGRADES = (
     ("subscriptions", "read_at", "text"),
     ("subscriptions", "error", "text"),
     ("subscriptions", "tabs", "integer not null default 0"),
+    ("users", "rank", "integer not null default 0", "update users set rank = 1"),  # who was in before ranks is trusted
 )
 
 
@@ -137,10 +148,13 @@ class Store:
 
     def _upgrade(self) -> None:
         """Add the columns an older database lacks, before the schema's indexes may need them."""
-        for table, column, definition in UPGRADES:
+        for table, column, definition, *fill in UPGRADES:
             have = {row["name"] for row in self.db.execute(f"pragma table_info({table})")}
             if have and column not in have:
                 self.db.execute(f"alter table {table} add column {column} {definition}")
+                for sql in fill:
+                    self.db.execute(sql)
+        self.db.commit()
 
     def close(self) -> None:
         self.db.close()

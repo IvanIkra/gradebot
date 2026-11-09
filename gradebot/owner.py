@@ -1,14 +1,16 @@
 """The owner's commands: invite codes, users, group sheets, courses and layouts.
 
 Callbacks: `rq:<invite>` asks to revoke a code and `rv:<invite>` revokes it, `codes` and `users` redraw the lists,
-`du:<user>` asks to delete a user and `dy:<user>` deletes them, `nr:<user>` resets a user's full name, `gr:<sheet>`
-makes a group sheet an own one, `rl:<sheet>` lays a sheet out again, `st` redraws /status, `iv:<minutes>` sets
-how often the sheets are read.
+`du:<user>` asks to delete a user and `dy:<user>` deletes them, `rk:<user>` trusts a user or stops trusting them,
+`nr:<user>` resets a user's full name, `sa:<request>` and `sd:<request>` approve and decline a user's sheet,
+`gr:<sheet>` makes a group sheet an own one, `rl:<sheet>` lays a sheet out again, `st` redraws /status,
+`iv:<minutes>` sets how often the sheets are read.
 """
 
 import logging
 
 from . import clock, poller
+from .access import MEMBER, TRUSTED
 from .i18n import tr
 from .rich import Doc, b, code, i, link
 from .sheets import SheetError
@@ -58,6 +60,17 @@ class OwnerCommands:
             note = await self.delete_user(number, lang)
             await self.api.edit(chat, message_id, self.users_view(lang))
             return note
+        elif kind == "rk" and number:
+            user = self.access.user(number)
+            if user is None:
+                return None
+            self.access.set_rank(number, MEMBER if user["rank"] >= TRUSTED else TRUSTED)
+            await self.api.edit(chat, message_id, self.users_view(lang))
+            return tr(lang, "Trusted", "Доверенный") if user["rank"] < TRUSTED else tr(lang, "Member", "Обычный")
+        elif kind == "sa" and number:
+            return await self.approve(chat, message_id, number, lang)
+        elif kind == "sd" and number:
+            return await self.decline(chat, message_id, number, lang)
         elif kind == "nr" and number:
             return await self.reset_name(chat, message_id, number, lang)
         elif kind == "gr" and number:
@@ -84,7 +97,7 @@ class OwnerCommands:
                 .table([], [["/invite " + tr(lang, "[note]", "[пометка]"),
                              tr(lang, "a one-time invite code", "одноразовый код приглашения")],
                             ["/codes", tr(lang, "unused codes, revoke", "неиспользованные коды, отзыв")],
-                            ["/users", tr(lang, "users, delete", "пользователи, удаление")],
+                            ["/users", tr(lang, "users: rank, delete", "пользователи: ранг, удаление")],
                             ["/groupsheet " + tr(lang, "[link [course]]", "[ссылка [курс]]"),
                              tr(lang, "the group's sheets: everyone follows them",
                                 "общие таблицы: на них подписаны все")],
@@ -140,12 +153,22 @@ class OwnerCommands:
             return Doc().p(tr(lang, "No users yet. ", "Пользователей пока нет. "), "/invite")
         doc = Doc().h(tr(lang, "Users", "Пользователи") + f" · {len(users)}").table(
             [tr(lang, "Telegram", "Telegram"), tr(lang, "Full name", "ФИО"), tr(lang, "Sheets", "Таблиц"),
-             tr(lang, "Joined", "С"), tr(lang, "Code", "Код")],
-            [[self.who(u), u["student"] or "—", str(len(self.sheets.followed(u["tg_id"]))), self.when(u["joined_at"]),
-              u["note"] or "—"] for u in users], [None, None, "right", None, None])
+             tr(lang, "Rank", "Ранг"), tr(lang, "Joined", "С"), tr(lang, "Code", "Код")],
+            [[self.who(u), u["student"] or "—", str(len(self.sheets.followed(u["tg_id"]))), self.rank(u, lang),
+              self.when(u["joined_at"]), u["note"] or "—"] for u in users], [None, None, "right", None, None, None])
+        doc.p(i(tr(lang, "A member's sheet that the bot doesn't read yet waits for your approval; a trusted user's "
+                         "doesn't.",
+                   "Новую для бота таблицу обычного пользователя ты сначала одобряешь, доверенного — нет.")))
         for u in users[:30]:
-            doc.buttons((tr(lang, "Delete ", "Удалить ") + u["tg_name"], f"du:{u['tg_id']}", "danger"))
+            trusted = u["rank"] >= TRUSTED
+            rank = tr(lang, "Member: ", "Обычный: ") if trusted else tr(lang, "Trust: ", "Доверять: ")
+            doc.buttons((rank + u["tg_name"], f"rk:{u['tg_id']}"),
+                        (tr(lang, "Delete ", "Удалить ") + u["tg_name"], f"du:{u['tg_id']}", "danger"))
         return doc
+
+    @staticmethod
+    def rank(user: dict, lang: str) -> str:
+        return tr(lang, "trusted", "доверенный") if user["rank"] >= TRUSTED else tr(lang, "member", "обычный")
 
     def delete_view(self, tg_id: int, lang: str) -> Doc:
         user = self.access.user(tg_id)
@@ -168,6 +191,40 @@ class OwnerCommands:
         except TelegramError as e:
             log.info("telling a deleted user failed: %s", e)
         return tr(lang, "Deleted", "Удалён")
+
+    # --- requests for sheets ----------------------------------------------------------------------
+
+    async def approve(self, chat: int, message_id: int, rid: int, lang: str) -> str:
+        try:
+            done = self.sheets.approve(rid)
+        except SheetError:
+            return tr(lang, "The user has 20 sheets already", "У пользователя уже 20 таблиц")
+        if done is None:
+            return tr(lang, "Already handled", "Уже решено")
+        request, sheet = done
+        user = self.access.user(request["tg_id"])
+        await self.api.edit(chat, message_id, Doc().p(
+            tr(lang, "Approved: ", "Одобрено: "), link(request["url"], request["url"]), tr(lang, " for ", " для "),
+            self.who(user), "."))
+        ulang = user["lang"]
+        await self.tell(user, Doc().p(tr(ulang, "The owner approved the sheet. ", "Владелец одобрил таблицу. "))
+                        .extend(self.following(user, sheet)))
+        if user["student"]:
+            self.read_soon(user["tg_id"], [sheet["id"]])
+        return tr(lang, "Approved", "Одобрено")
+
+    async def decline(self, chat: int, message_id: int, rid: int, lang: str) -> str:
+        request = self.sheets.drop_request(rid)
+        if request is None:
+            return tr(lang, "Already handled", "Уже решено")
+        user = self.access.user(request["tg_id"])
+        await self.api.edit(chat, message_id, Doc().p(
+            tr(lang, "Declined: ", "Отклонено: "), link(request["url"], request["url"]), tr(lang, " for ", " для "),
+            self.who(user), "."))
+        ulang = user["lang"]
+        await self.tell(user, Doc().p(tr(ulang, "The owner declined the sheet ", "Владелец отклонил таблицу "),
+                                      link(request["url"], request["url"]), "."))
+        return tr(lang, "Declined", "Отклонено")
 
     async def reset_name(self, chat: int, message_id: int, tg_id: int, lang: str) -> str:
         user = self.access.user(tg_id)
@@ -308,6 +365,7 @@ class OwnerCommands:
             [tr(lang, "without a full name", "без ФИО"), str(sum(not u["student"] for u in users))],
             [tr(lang, "blocked the bot", "заблокировали бота"), str(sum(bool(u["paused"]) for u in users))],
             [tr(lang, "subscriptions with no row found", "подписок без найденной строки"), str(rows["bad_rows"])],
+            [tr(lang, "sheets waiting for approval", "таблиц ждут одобрения"), str(len(self.sheets.requests()))],
             [tr(lang, "grades waiting to be sent", "оценок ждут отправки"), str(rows["waiting"])]],
             [None, "right"])
         doc.h("Haiku")

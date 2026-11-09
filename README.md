@@ -17,7 +17,7 @@ to the Bot API by long polling.
 | anyone | `/start <code>` | come in with an invite code (the `t.me/<bot>?start=<code>` link does the same) |
 | user | `/grades` | your grades by sheet, the new ones of the last week marked; "Wrong" reports a bad layout to the owner |
 | user | `/name Surname Name` | your full name exactly as the sheets have it; the owner sees it and may reset it |
-| user | `/sheet <link>` | follow a Google Sheet (open to anyone with the link) |
+| user | `/sheet <link>` | follow a Google Sheet (open to anyone with the link); a member's sheet the bot does not read yet waits for the owner's approval |
 | user | `/sheets` | your sheets: when each was read, how many grades, what is wrong; check now or unfollow |
 | user | `/quiet [23-8\|off]` | quiet hours: messages then come without a sound; 23:00–8:00 by default |
 | user | `/lang [en\|ru]` | the bot's language |
@@ -25,7 +25,7 @@ to the Bot API by long polling.
 | user | `/stop` | erase everything the bot keeps about you and leave |
 | owner | `/invite [note]` | a one-time invite code and its link |
 | owner | `/codes` | unused codes, with a button to revoke each |
-| owner | `/users` | users, with a button to delete each |
+| owner | `/users` | users, with buttons to trust each (their new sheets need no approval) or delete them |
 | owner | `/groupsheet [link [course]]` | the group's sheets: every user follows them, new users too |
 | owner | `/course <link> <course>` | a sheet's course, the short name in front of its works (up to 10 characters) |
 | owner | `/relayout <link>` | drop a sheet's cached layout: its tabs are laid out again at once |

@@ -1,13 +1,14 @@
 """A user's own commands: grades, the full name, sheets, quiet hours, language and leaving.
 
 Callbacks: `grades` sends /grades, `rf` redraws it in place, `wr:<sheet>` complains about a sheet's layout,
-`ck:<sheet>` reads a sheet now, `us:<sheet>` unfollows it, `qt:<hours|off>` sets quiet hours, `lg:<en|ru>` the
-language, `stop` and `stop!` cancel and confirm /stop.
+`ck:<sheet>` reads a sheet now, `us:<sheet>` unfollows it, `cr:<request>` cancels a request for a sheet waiting for
+the owner, `qt:<hours|off>` sets quiet hours, `lg:<en|ru>` the language, `stop` and `stop!` cancel and confirm /stop.
 """
 
 import datetime as dt
 
 from . import clock, profile
+from .access import TRUSTED
 from .cards import grades_section
 from .i18n import LANGUAGES, tr
 from .notices import explain
@@ -54,6 +55,10 @@ class UserCommands:
             done = self.sheets.unfollow(user["tg_id"], int(arg))
             await self.api.edit(chat, message_id, self.sheets_view(user))
             return tr(lang, "Unfollowed", "Отписан") if done else None
+        if kind == "cr" and arg.isdigit():
+            found = self.sheets.drop_request(int(arg), user["tg_id"])
+            await self.api.edit(chat, message_id, self.sheets_view(user))
+            return tr(lang, "Request cancelled", "Заявка отменена") if found else None
         if kind == "qt":
             try:
                 self.access.set_quiet(user["tg_id"], profile.quiet(arg))
@@ -138,29 +143,60 @@ class UserCommands:
             await self.api.send(chat, Doc().p(tr(lang, "Send the sheet's link: ", "Пришли ссылку на таблицу: "),
                                               code("/sheet https://docs.google.com/spreadsheets/d/…")))
             return
+        url = arg.split()[0]
         try:
-            sheet, new = self.sheets.follow(user["tg_id"], arg.split()[0])
+            if self.sheets.by_url(url) is None and user["rank"] < TRUSTED:
+                await self.ask_owner(chat, user, url)
+                return
+            sheet, new = self.sheets.follow(user["tg_id"], url)
         except SheetError as e:
-            text = tr(lang, "You follow 20 sheets already: unfollow one in /sheets.",
-                      "У тебя уже 20 таблиц: отпишись от какой-нибудь в /sheets.") if "at most" in str(e) else \
-                tr(lang, "That's not a Google Sheets link: https://docs.google.com/spreadsheets/d/…",
-                   "Это не ссылка на таблицу Google: https://docs.google.com/spreadsheets/d/…")
-            await self.api.send(chat, text)
+            await self.api.send(chat, self.follow_error(e, lang))
             return
         if not new:
             await self.api.send(chat, tr(lang, "You follow this sheet already.", "Ты уже подписан на эту таблицу."))
             return
+        await self.api.send(chat, self.following(user, sheet))
+        if user["student"]:
+            self.read_soon(user["tg_id"], [sheet["id"]])
+
+    @staticmethod
+    def follow_error(error: SheetError, lang: str) -> str:
+        if "at most" in str(error):
+            return tr(lang, "You follow 20 sheets already: unfollow one in /sheets.",
+                      "У тебя уже 20 таблиц: отпишись от какой-нибудь в /sheets.")
+        return tr(lang, "That's not a Google Sheets link: https://docs.google.com/spreadsheets/d/…",
+                  "Это не ссылка на таблицу Google: https://docs.google.com/spreadsheets/d/…")
+
+    @staticmethod
+    def following(user: dict, sheet: dict) -> Doc:
+        """The answer to a sheet the user started to follow."""
+        lang = user["lang"]
         doc = Doc().p(tr(lang, "Following ", "Подписал на "), b(sheet_name(sheet)), ". ",
                       tr(lang, "The sheet must be open to anyone with the link.",
                          "Таблица должна быть открыта всем, у кого есть ссылка."))
         if not user["student"]:
-            doc.p(tr(lang, "To find your row I need your full name: ", "Чтобы найти твою строку, нужно ФИО: "),
-                  code(tr(lang, "/name Surname Name", "/name Фамилия Имя")))
-        else:
-            doc.p(tr(lang, "Reading it now; I'll write what I find.", "Сейчас прочитаю её и напишу, что нашёл."))
-        await self.api.send(chat, doc)
-        if user["student"]:
-            self.read_soon(user["tg_id"], [sheet["id"]])
+            return doc.p(tr(lang, "To find your row I need your full name: ", "Чтобы найти твою строку, нужно ФИО: "),
+                         code(tr(lang, "/name Surname Name", "/name Фамилия Имя")))
+        return doc.p(tr(lang, "Reading it now; I'll write what I find.", "Сейчас прочитаю её и напишу, что нашёл."))
+
+    async def ask_owner(self, chat: int, user: dict, url: str) -> None:
+        """A member's sheet the bot does not read yet: the owner approves it first. SheetError as follow."""
+        lang = user["lang"]
+        request, new = self.sheets.ask(user["tg_id"], url)
+        if not new:
+            await self.api.send(chat, tr(lang, "This sheet is already waiting for the owner's approval.",
+                                         "Эта таблица уже ждёт одобрения владельца."))
+            return
+        await self.api.send(chat, Doc().p(
+            tr(lang, "The bot doesn't read this sheet yet, so the owner approves it first. I'll write when they do.",
+               "Бот ещё не читает эту таблицу, поэтому сначала её одобрит владелец. Напишу, когда он ответит.")))
+        owner = self.owner_lang
+        await self.tell_owner(
+            Doc().p(self.who(user), tr(owner, " asks to follow a sheet the bot doesn't read yet: ",
+                                       " просит подписать его на таблицу, которую бот ещё не читает: "),
+                    link(request["url"], request["url"]))
+            .buttons((tr(owner, "Approve", "Одобрить"), f"sa:{request['id']}", "success"),
+                     (tr(owner, "Decline", "Отклонить"), f"sd:{request['id']}", "danger")))
 
     async def cmd_sheets(self, chat: int, user: dict, arg: str) -> None:
         await self.api.send(chat, self.sheets_view(user))
@@ -175,9 +211,19 @@ class UserCommands:
 
     def sheets_view(self, user: dict) -> Doc:
         lang, sheets = user["lang"], self.sheets.followed(user["tg_id"])
-        if not sheets:
-            return Doc().p(tr(lang, "No sheets yet: ", "Таблиц пока нет: "),
-                           code(tr(lang, "/sheet <link>", "/sheet <ссылка>")))
+        doc = Doc() if sheets else Doc().p(tr(lang, "No sheets yet: ", "Таблиц пока нет: "),
+                                           code(tr(lang, "/sheet <link>", "/sheet <ссылка>")))
+        if sheets:
+            self.sheets_table(doc, user, sheets)
+        if requests := self.sheets.requests(user["tg_id"]):
+            doc.p(tr(lang, "Waiting for the owner's approval:", "Ждут одобрения владельца:"))
+            doc.table([], [[link(r["url"], r["url"])] for r in requests])
+            for n, r in enumerate(requests[:30], 1):
+                doc.buttons((tr(lang, f"Cancel request {n}", f"Отменить заявку {n}"), f"cr:{r['id']}", "danger"))
+        return doc
+
+    def sheets_table(self, doc: Doc, user: dict, sheets: list[dict]) -> None:
+        lang = user["lang"]
         never = tr(lang, "not yet", "ещё нет")
         rows = [[link(sheet_name(s), s["url"]), self.when(s["read_at"]) if s["read_at"] else never,
                  str(self.grades.count(user["tg_id"], s["id"])), self.sheet_problem(s, lang)] for s in sheets]
@@ -185,7 +231,7 @@ class UserCommands:
                   tr(lang, "Problem", "Ошибка")]
         if not any(row[3] for row in rows):
             header, rows = header[:3], [row[:3] for row in rows]
-        doc = Doc().h(tr(lang, "Your sheets", "Твои таблицы") + f" · {len(sheets)}").table(
+        doc.h(tr(lang, "Your sheets", "Твои таблицы") + f" · {len(sheets)}").table(
             header, rows, [None, None, "right", None])
         if not user["student"]:
             doc.p(tr(lang, "Your rows are looked for once you set your full name: ",
@@ -193,7 +239,6 @@ class UserCommands:
         for s in sheets:
             doc.buttons((tr(lang, "Check ", "Проверить: ") + sheet_name(s), f"ck:{s['id']}"),
                         (tr(lang, "Unfollow ", "Отписаться: ") + sheet_name(s), f"us:{s['id']}", "danger"))
-        return doc
 
     # --- grades ----------------------------------------------------------------------------------
 

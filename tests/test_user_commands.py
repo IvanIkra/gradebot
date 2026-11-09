@@ -1,5 +1,7 @@
 import pytest
 
+from gradebot.access import TRUSTED
+
 from .conftest import OWNER, buttons, callback, invite_code, message
 from .test_sheets import ALG, CALC
 
@@ -34,7 +36,8 @@ async def test_name_tells_the_owner_and_can_be_reset(bot, api, access, petr):
     assert "ФИО не указано" in api.last(PETR)["text"]
 
 
-async def test_sheets_follow_and_unfollow(bot, api, sheets, petr):
+async def test_sheets_follow_and_unfollow(bot, api, sheets, access, petr):
+    access.set_rank(PETR, TRUSTED)
     await bot.handle(message(PETR, "/sheets"))
     assert "Таблиц пока нет" in api.last(PETR)["text"]
     await bot.handle(message(PETR, "/sheet https://example.com/x"))
@@ -104,7 +107,8 @@ async def test_language(bot, api, access, petr):
     assert access.user(PETR)["lang"] == "ru"
 
 
-async def test_stop_drops_own_sheets(bot, api, sheets, petr):
+async def test_stop_drops_own_sheets(bot, api, sheets, access, petr):
+    access.set_rank(PETR, TRUSTED)
     await bot.handle(message(PETR, f"/sheet {CALC}"))
     sheet_id = sheets.followed(PETR)[0]["id"]
     await bot.handle(callback(PETR, "stop!"))
