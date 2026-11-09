@@ -7,17 +7,18 @@ new and changed grades to a private chat.
 Access is by one-time invite codes from the owner. There is no sign-up and no public web part: the bot only talks
 to the Bot API by long polling.
 
-> Status: early. Invite codes, users, their names, sheets, quiet hours and languages are done, and the sheets are
-> read: new and changed grades are found and kept for each user. Sending them and `/grades` come next.
+> Status: early. Everything below is done and tested, but not yet run against live Telegram: deployment and a
+> trial with a few friends come next.
 
 ## Commands
 
 | Who | Command | What it does |
 |---|---|---|
 | anyone | `/start <code>` | come in with an invite code (the `t.me/<bot>?start=<code>` link does the same) |
+| user | `/grades` | your grades by sheet, the new ones of the last week marked; "Wrong" reports a bad layout to the owner |
 | user | `/name Surname Name` | your full name exactly as the sheets have it; the owner sees it and may reset it |
 | user | `/sheet <link>` | follow a Google Sheet (open to anyone with the link) |
-| user | `/sheets` | your sheets, with a button to unfollow each |
+| user | `/sheets` | your sheets: when each was read, how many grades, what is wrong; check now or unfollow |
 | user | `/quiet [23-8\|off]` | quiet hours: messages then come without a sound; 23:00–8:00 by default |
 | user | `/lang [en\|ru]` | the bot's language |
 | user | `/help` | the commands |
@@ -28,6 +29,7 @@ to the Bot API by long polling.
 | owner | `/groupsheet [link [course]]` | the group's sheets: every user follows them, new users too |
 | owner | `/course <link> <course>` | a sheet's course, the short name in front of its works (up to 10 characters) |
 | owner | `/relayout <link>` | drop a sheet's cached layout: its tabs are laid out again at once |
+| owner | `/status` | sheets and their errors, users, Haiku spending today and this month |
 
 A sheet is stored once for everyone who follows it, so it is downloaded and laid out once.
 
@@ -49,8 +51,15 @@ monthly limit (`LLM_MONTHLY_USD`): beyond it new tabs wait for the next month, c
 
 ## Messages
 
-Lists and notices are rich messages (`sendRichMessage`, Bot API 10.1+): headings and tables. When the Bot API
-server has no rich messages, the bot falls back to classic HTML messages with the same content.
+Lists and notices are rich messages (`sendRichMessage`, Bot API 10.3+): headings, tables, collapsible sections and
+buttons inside the message. When the Bot API server has no rich messages, the bot falls back to classic HTML
+messages with the same content and the buttons as an inline keyboard.
+
+New grades come once a poll, in one message for all sheets (more only when it would not fit): a section per sheet
+headed by its title and the course's hashtag, a row per work with the grade on 0–10, the bonus, the sheet's own
+points when its scale is not 0–10, and the grade before for a changed one. Within the user's quiet hours it comes
+without a sound. Grades that could not be sent wait for the next poll for up to a week; a user who blocked the bot
+is paused until they write to it again, and the owner is told.
 
 ## Running
 

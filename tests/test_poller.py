@@ -9,7 +9,7 @@ from gradebot.poller import Poller
 
 from .books import ANNA, IVAN, URL
 from .books import workbook as book
-from .conftest import OWNER, add_user, message
+from .conftest import OWNER, add_user, buttons, message
 
 
 @pytest.fixture
@@ -69,10 +69,19 @@ async def test_one_download_and_one_layout_for_every_follower(google, poller, tw
     clock.advance(hours=1)
     sent = len(api.sent())
     await poller.poll()
-    assert len(api.sent()) == sent and google["titles"] == 1 and len(llm.prompts) == 2  # nothing to tell, cached
-    news = {(e["tg_id"], e["label"]): e for e in bot.grades.waiting()}
-    assert set(news) == {(1, "HW 1A"), (1, "Quiz 1")}
-    assert news[1, "HW 1A"]["value"] == 9 and news[1, "HW 1A"]["previous"] == pytest.approx(8.43)
+    assert google["titles"] == 1 and len(llm.prompts) == 2  # the layout is cached
+    [news] = api.sent()[sent:]                              # one message, to Ivan only
+    assert news["chat_id"] == 1 and news["method"] == "sendRichMessage"
+    assert f'<h3><a href="{URL.split("/edit")[0]}">Матанализ "1"</a> #Матанали</h3>' in news["text"]
+    assert ('<tr><td>HW 1A</td><td align="right"><b>9</b> +1</td><td align="right">6.3 из 7</td>'
+            '<td align="right">8.4</td></tr>') in news["text"]
+    assert '<tr><td>Quiz 1</td><td align="right"><b>9</b></td><td align="right"></td><td align="right">8</td>' \
+        in news["text"]
+    assert buttons(news) == {"Все оценки": "grades"}
+    assert ("disable_notification", True) not in api.calls[-1][1].items()  # 15:00 in Moscow: not quiet
+    assert bot.grades.waiting() == []
+    await poller.poll()
+    assert len(api.sent()) == sent + 1  # nothing twice
 
 
 async def test_a_request_reads_only_that_sheet_and_tells_the_user(google, poller, two, bot, api, sheets, access):

@@ -47,7 +47,7 @@ async def test_sheets_follow_and_unfollow(bot, api, sheets, petr):
 
     await bot.handle(message(PETR, "/sheets"))
     listing = api.last(PETR)
-    assert "Твои таблицы · 1" in listing["text"] and "своя" in listing["text"]
+    assert "Твои таблицы · 1" in listing["text"] and "ещё нет" in listing["text"]  # not read yet
     await bot.handle(callback(PETR, buttons(listing)["Отписаться: …789abc"]))
     assert sheets.followed(PETR) == []
     assert "Таблиц пока нет" in api.last(PETR)["text"]
@@ -71,11 +71,11 @@ async def test_group_sheets_for_new_and_old_users(bot, api, sheets, petr, access
 
     await bot.handle(message(OWNER, "/groupsheet"))
     listing = api.last(OWNER)
-    assert "Общие таблицы · 1" in listing["text"] and "<td>2</td>" in listing["text"]
+    assert "Общие таблицы · 1" in listing["text"] and '<td align="right">2</td>' in listing["text"]
     await bot.handle(callback(OWNER, buttons(listing)["Убрать из общих: Матан-2"]))
     assert sheets.group() == [] and len(sheets.followed(PETR)) == 1
     await bot.handle(message(OWNER, "/users"))
-    assert "<td>1</td>" in api.last(OWNER)["text"]
+    assert '<td align="right">1</td>' in api.last(OWNER)["text"]
 
 
 async def test_quiet_hours(bot, api, access, petr):

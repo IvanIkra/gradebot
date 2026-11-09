@@ -89,6 +89,12 @@ create table if not exists grade_events (   -- new and changed grades, waiting t
     foreign key (tg_id, sheet) references subscriptions(tg_id, sheet) on delete cascade
 );
 create index if not exists grade_events_user on grade_events(tg_id, sheet, seen_at);
+create table if not exists layout_reports (  -- a user's complaints about a sheet's layout: one a day
+    tg_id integer not null references users(tg_id) on delete cascade,
+    sheet integer not null references sheets(id) on delete cascade,
+    created_at text not null
+);
+create index if not exists layout_reports_user on layout_reports(tg_id, sheet, created_at);
 create table if not exists llm_runs (       -- every Haiku call, a failed one too: tokens and cost
     id integer primary key,
     at text not null,               -- UTC

@@ -6,7 +6,7 @@ import logging
 
 import aiohttp
 
-from .rich import Doc
+from .rich import Doc, inline_button
 
 log = logging.getLogger(__name__)
 
@@ -85,21 +85,22 @@ class BotApi:
                     raise
                 log.warning("the Bot API has no rich messages (%s): classic HTML from now on", e)
                 self.rich = False
-        text = doc.plain() if isinstance(doc, Doc) else doc
+        text, markup = classic(doc, keyboard)
         msg = await self.call("sendMessage", chat_id=chat_id, text=text, parse_mode="HTML",
-                              link_preview_options={"is_disabled": True}, reply_markup=keyboard,
+                              link_preview_options={"is_disabled": True}, reply_markup=markup,
                               disable_notification=silent or None)
         return msg["message_id"]
 
     async def edit(self, chat_id: int, message_id: int, doc: Doc | str, keyboard: dict | None = None) -> None:
         """Edit what `send` sent. An unchanged message is not an error."""
         if isinstance(doc, Doc) and self.rich:
-            params = {"rich_message": {"html": doc.rich()}}
+            params = {"rich_message": {"html": doc.rich()}, "reply_markup": keyboard}
         else:
-            params = {"text": doc.plain() if isinstance(doc, Doc) else doc, "parse_mode": "HTML",
-                      "link_preview_options": {"is_disabled": True}}
+            text, markup = classic(doc, keyboard)
+            params = {"text": text, "parse_mode": "HTML", "link_preview_options": {"is_disabled": True},
+                      "reply_markup": markup}
         try:
-            await self.call("editMessageText", chat_id=chat_id, message_id=message_id, reply_markup=keyboard, **params)
+            await self.call("editMessageText", chat_id=chat_id, message_id=message_id, **params)
         except TelegramError as e:
             if "message is not modified" not in e.description:
                 raise
@@ -112,6 +113,16 @@ class BotApi:
         scope = {"type": "chat", "chat_id": chat_id} if chat_id else {"type": "default"}
         await self.call("setMyCommands", commands=[{"command": c, "description": d} for c, d in commands],
                         scope=scope, language_code=lang)
+
+
+def classic(doc: Doc | str, keyboard: dict | None) -> tuple[str, dict | None]:
+    """A classic message: the Doc's text, and its buttons under the keyboard given."""
+    if not isinstance(doc, Doc):
+        return doc, keyboard
+    rows = [[inline_button(button) for button in row] for row in doc.button_rows()]
+    if rows:
+        keyboard = {"inline_keyboard": [*(keyboard or {}).get("inline_keyboard", []), *rows]}
+    return doc.plain(), keyboard
 
 
 def no_rich(error: TelegramError) -> bool:

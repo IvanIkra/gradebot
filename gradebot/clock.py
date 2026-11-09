@@ -24,3 +24,9 @@ def month_start(moment: dt.datetime, zone: dt.tzinfo) -> dt.datetime:
 def month(moment: dt.datetime, zone: dt.tzinfo) -> str:
     """'2026-11': the local month of a moment."""
     return moment.astimezone(zone).strftime("%Y-%m")
+
+
+def day_start(moment: dt.datetime, zone: dt.tzinfo) -> dt.datetime:
+    """Local midnight that starts `moment`'s day, as UTC."""
+    local = moment.astimezone(zone)
+    return dt.datetime(local.year, local.month, local.day, tzinfo=zone).astimezone(dt.UTC)

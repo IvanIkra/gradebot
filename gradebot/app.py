@@ -23,18 +23,20 @@ log = logging.getLogger(__name__)
 OFFSET = "updates.offset"   # kv: the next update to ask for, so a restart neither loses nor repeats updates
 
 USER_COMMANDS = {
-    "en": [("sheets", "your sheets"), ("sheet", "follow a Google Sheet"), ("name", "your full name"),
+    "en": [("grades", "your grades"), ("sheets", "your sheets"), ("sheet", "follow a Google Sheet"),
+           ("name", "your full name"),
            ("quiet", "quiet hours"), ("lang", "language"), ("help", "commands"), ("stop", "erase your data and leave")],
-    "ru": [("sheets", "твои таблицы"), ("sheet", "подписаться на таблицу"), ("name", "ФИО"),
+    "ru": [("grades", "твои оценки"), ("sheets", "твои таблицы"), ("sheet", "подписаться на таблицу"),
+           ("name", "ФИО"),
            ("quiet", "тихие часы"), ("lang", "язык"), ("help", "команды"), ("stop", "удалить свои данные и уйти")],
 }
 OWNER_COMMANDS = {
     "en": [("invite", "a one-time invite code"), ("codes", "unused codes"), ("users", "users"),
            ("groupsheet", "the group's sheets"), ("course", "a sheet's course"),
-           ("relayout", "lay a sheet out again"), ("help", "commands")],
+           ("relayout", "lay a sheet out again"), ("status", "sheets, users, Haiku"), ("help", "commands")],
     "ru": [("invite", "одноразовый код приглашения"), ("codes", "неиспользованные коды"), ("users", "пользователи"),
            ("groupsheet", "общие таблицы"), ("course", "курс таблицы"), ("relayout", "разметить таблицу заново"),
-           ("help", "команды")],
+           ("status", "таблицы, пользователи, Haiku"), ("help", "команды")],
 }
 
 
@@ -56,7 +58,8 @@ class Service:
             bot = Bot(api, self.store, self.access, self.sheets, self.env.owner_id, self.env.zone,
                       me.get("username") or "")
             poller = Poller(self.sheets, bot.grades, self.layouts)
-            bot.poller, poller.on_read, self.budget.notify = poller, bot.after_read, bot.budget_notice
+            bot.poller, bot.budget = poller, self.budget
+            poller.on_read, self.budget.notify = bot.after_read, bot.budget_notice
             await self.set_commands(api)
             await asyncio.gather(poll(api, bot, self.store), poller.run())
 

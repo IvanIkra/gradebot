@@ -1,4 +1,5 @@
 import datetime as dt
+import html
 import re
 from zoneinfo import ZoneInfo
 
@@ -32,6 +33,7 @@ class FakeApi(BotApi):
         super().__init__("TOKEN", "http://bot.invalid")
         self.calls: list[tuple[str, dict]] = []
         self.fail: dict[str, TelegramError] = {}   # method -> the error it raises
+        self.fail_chat: dict[int, TelegramError] = {}  # chat -> the error every send to it raises
         self.server_rich = rich
         self._next_id = 100
 
@@ -42,6 +44,9 @@ class FakeApi(BotApi):
             raise TelegramError(method, 404, "Not Found")
         if method in self.fail:
             raise self.fail[method]
+        if method.startswith("send") and params.get("chat_id") in self.fail_chat:
+            self.calls[-1] = ("failed:" + method, params)
+            raise self.fail_chat[params["chat_id"]]
         if method.startswith("send"):
             self._next_id += 1
             return {"message_id": self._next_id}
@@ -63,9 +68,13 @@ class FakeApi(BotApi):
 
 
 def buttons(message: dict) -> dict[str, str]:
-    """text -> callback_data of a message's keyboard."""
+    """text -> callback_data (or url) of a message's buttons: its keyboard and those inside a rich message."""
     rows = (message["keyboard"] or {}).get("inline_keyboard", [])
-    return {button["text"]: button["callback_data"] for row in rows for button in row}
+    found = {button["text"]: button.get("callback_data") or button.get("url") for row in rows for button in row}
+    for value, text in re.findall(r'<tg-button type="\w+" (?:data|url)="([^"]*)"[^>]*>(.*?)</tg-button>',
+                                  message["text"]):
+        found[html.unescape(text)] = html.unescape(value)
+    return found
 
 
 def invite_code(text: str) -> str:

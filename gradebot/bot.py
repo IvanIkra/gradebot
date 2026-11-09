@@ -13,10 +13,11 @@ from . import clock
 from .access import Access, NewUser, normalise
 from .grades import Grades
 from .i18n import guess, tr
+from .llm.budget import Budget
 from .notices import ReadNotices
 from .owner import OwnerCommands
 from .poller import Poller
-from .rich import Doc, Html, code, join, keyboard
+from .rich import Doc, Html, code, join
 from .sheets import Sheets
 from .store import Store
 from .telegram import BotApi, TelegramError
@@ -47,6 +48,7 @@ class Bot(OwnerCommands, UserCommands, ReadNotices):
         self.owner_id, self.zone, self.username, self.now = owner_id, zone, username, now
         self.grades = Grades(store, now)
         self.poller: Poller | None = None   # set by the service; without it nothing is read
+        self.budget: Budget | None = None   # set by the service: the owner's /status shows the spending
         self._tasks: set[asyncio.Task] = set()
 
     @property
@@ -73,14 +75,26 @@ class Bot(OwnerCommands, UserCommands, ReadNotices):
             for sheet in sheets:
                 self.poller.request(sheet, tg_id)
 
-    async def tell(self, user: dict, text: str | Doc) -> None:
-        """A user, unasked; one who blocked the bot is paused."""
+    async def tell(self, user: dict, text: str | Doc, silent: bool = False) -> int | None:
+        """A user, unasked: the message id, or None when it failed. One who blocked the bot is paused."""
         try:
-            await self.api.send(user["tg_id"], text)
+            return await self.api.send(user["tg_id"], text, silent=silent)
         except TelegramError as e:
-            if e.blocked:
-                self.access.set_paused(user["tg_id"], True)
             log.info("telling user %s failed: %s", user["tg_id"], e)
+            if e.blocked:
+                await self.blocked(user)
+            return None
+
+    async def blocked(self, user: dict) -> None:
+        """The user blocked the bot: no reads, no messages until they write again; the owner hears of it once."""
+        if user["paused"]:
+            return
+        self.access.set_paused(user["tg_id"], True)
+        lang = self.owner_lang
+        await self.tell_owner(Doc().p(self.who(user), tr(
+            lang, " blocked the bot: their sheets are paused until they write to it again.",
+            " заблокировал бота: его таблицы на паузе, пока он снова не напишет боту."))
+            .buttons((tr(lang, "Delete", "Удалить"), f"du:{user['tg_id']}", "danger")))
 
     # --- updates -------------------------------------------------------------------------------
 
@@ -137,8 +151,8 @@ class Bot(OwnerCommands, UserCommands, ReadNotices):
                 user = self.access.user(tg_id)
                 note = f" «{invite['note']}»" if invite["note"] else ""
                 await self.tell_owner(
-                    Doc().p(self.who(user), tr(self.owner_lang, " came in with the code", " вошёл по коду"), note),
-                    keyboard([[(tr(self.owner_lang, "Delete", "Удалить"), f"du:{tg_id}")]]))
+                    Doc().p(self.who(user), tr(self.owner_lang, " came in with the code", " вошёл по коду"), note)
+                    .buttons((tr(self.owner_lang, "Delete", "Удалить"), f"du:{tg_id}", "danger")))
                 return
             if self.access.locked(tg_id):
                 return

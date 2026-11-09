@@ -74,6 +74,9 @@ async def test_codes_and_revoke(bot, api, access):
     listing = api.last(OWNER)
     assert "<table" in listing["text"] and "Аня" in listing["text"]
     await bot.handle(callback(OWNER, buttons(listing)["Отозвать Аня"]))
+    confirm = api.last(OWNER)
+    assert "Отозвать код <b>Аня</b>?" in confirm["text"] and len(access.open_invites()) == 1
+    await bot.handle(callback(OWNER, buttons(confirm)["Да, отозвать"]))
     assert access.open_invites() == []
     edited = api.last(OWNER)
     assert edited["method"] == "editMessageText" and "Неиспользованных кодов нет" in edited["text"]

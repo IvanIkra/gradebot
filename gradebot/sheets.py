@@ -91,7 +91,9 @@ class Sheets:
         return cur.rowcount == 1
 
     def followed(self, tg_id: int) -> list[dict]:
-        rows = self.db.execute("select s.* from sheets s join subscriptions u on u.sheet = s.id where u.tg_id = ? "
+        """The user's sheets, with how their rows were read: read_at, user_error, tabs, baseline_at."""
+        rows = self.db.execute("select s.*, u.read_at, u.error user_error, u.tabs, u.baseline_at from sheets s "
+                               "join subscriptions u on u.sheet = s.id where u.tg_id = ? "
                                "order by s.group_sheet desc, s.id", (tg_id,))
         return [dict(row) for row in rows]
 
@@ -113,6 +115,12 @@ class Sheets:
         rows = self.db.execute("select u.* from users u join subscriptions s on s.tg_id = u.tg_id "
                                "where s.sheet = ? and u.student is not null and not u.paused order by u.tg_id",
                                (sheet,))
+        return [dict(row) for row in rows]
+
+    def every(self) -> list[dict]:
+        """Every sheet with the number of its followers: the owner's /status."""
+        rows = self.db.execute("select s.*, (select count(*) from subscriptions u where u.sheet = s.id) followers "
+                               "from sheets s order by s.group_sheet desc, s.id")
         return [dict(row) for row in rows]
 
     def to_read(self) -> list[dict]:

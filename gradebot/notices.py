@@ -1,5 +1,10 @@
-"""What the bot tells unasked after the sheets are read: how a requested read went, a sheet that cannot be read for
-12 hours and its return, and the LLM limit to the owner.
+"""What the bot tells unasked after the sheets are read: new grades, how a requested read went, a sheet that cannot
+be read for 12 hours and its return, and the LLM limit to the owner.
+
+New grades go to every user in one message a poll (spec §5.4), more only when it does not fit the limits of a rich
+message; each message marks its own grades sent, so a failure halfway sends nothing twice. Within the user's quiet
+hours it comes without a sound. Grades not sent (Telegram failed, the user blocked the bot) wait for the next poll
+while they are within the window of a week.
 
 A user is told after a read they asked for (a new sheet, a new full name) and after the first read of a sheet for
 them, which may follow a group sheet the owner added: one message for every sheet of the poll.
@@ -8,7 +13,8 @@ them, which may follow a group sheet the owner added: one message for every shee
 import asyncio
 import logging
 
-from . import poller
+from . import poller, profile
+from .cards import collapse, news_messages
 from .i18n import tr
 from .llm.budget import Level
 from .poller import SheetRead, UserRead
@@ -72,6 +78,31 @@ class ReadNotices:
                     doc.p(tr(lang, "New and changed grades will come here.",
                              "Новые и изменённые оценки будут приходить сюда."))
                 await self.tell(user, doc)
+        await self.send_grades()
+
+    async def send_grades(self) -> None:
+        by_user: dict[int, list[dict]] = {}
+        for event in self.grades.waiting():
+            by_user.setdefault(event["tg_id"], []).append(event)
+        for tg_id, events in by_user.items():
+            user = self.access.user(tg_id)
+            if user is None or user["paused"]:
+                continue
+            by_sheet: dict[int, list[dict]] = {}
+            for event in events:
+                by_sheet.setdefault(event["sheet"], []).append(event)
+            sections = []
+            for sheet_id, sheet_events in by_sheet.items():
+                rows, dropped = collapse(sheet_events)
+                self.grades.sent(dropped, 0)  # back where they were: nothing to tell
+                if (sheet := self.sheets.get(sheet_id)) is not None:
+                    sections.append((sheet, rows))
+            silent = profile.is_quiet(user, self.now(), self.zone)
+            for doc, ids in news_messages(sections, user["lang"]):
+                msg_id = await self.tell(user, doc, silent=silent)
+                if msg_id is None:
+                    break  # the rest wait for the next poll
+                self.grades.sent(ids, msg_id)
 
     async def tell_failing(self, read: SheetRead) -> None:
         """A sheet failing for 12 hours, or back after that: the owner and every follower, once each."""
@@ -79,7 +110,8 @@ class ReadNotices:
         for tg_id in self.sheets.followers(sheet["id"]):
             if (user := self.access.user(tg_id)) is not None:
                 await self.tell(user, self.failing_doc(sheet, read, user["lang"]))
-        await self.tell_owner(self.failing_doc(sheet, read, self.owner_lang, read.error))
+        await self.tell_owner(self.failing_doc(sheet, read, self.owner_lang, read.error)
+                              .buttons((tr(self.owner_lang, "Open the sheet", "Открыть таблицу"), sheet["url"])))
 
     def failing_doc(self, sheet: dict, read: SheetRead, lang: str, detail: str | None = None) -> Doc:
         """`detail`: the error as kept, for the owner; a user reads it explained."""
