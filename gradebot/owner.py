@@ -1,4 +1,4 @@
-"""The owner's commands: invite codes, users, group sheets, courses and layouts.
+"""The owner's commands: invite codes, users, groups and their sheets, sheets' short names and layouts.
 
 Callbacks: `rq:<invite>` asks to revoke a code and `rv:<invite>` revokes it, `codes` and `users` redraw the lists,
 `du:<user>` asks to delete a user and `dy:<user>` deletes them, `rk:<user>` trusts a user or stops trusting them,
@@ -35,8 +35,8 @@ class OwnerCommands:
             await self.cmd_groups(chat, arg, lang)
         elif cmd == "/groupsheet":
             await self.cmd_groupsheet(chat, arg, lang)
-        elif cmd == "/course":
-            await self.cmd_course(chat, arg, lang)
+        elif cmd == "/rename":
+            await self.cmd_rename(chat, arg, lang)
         elif cmd == "/relayout":
             await self.cmd_relayout(chat, arg, lang)
         elif cmd == "/status":
@@ -129,14 +129,14 @@ class OwnerCommands:
                             ["/groups " + tr(lang, "[name [new name]]", "[имя [новое имя]]"),
                              tr(lang, "groups: a new one, a new name; delete",
                                 "группы: новая, переименовать; удаление")],
-                            ["/groupsheet " + tr(lang, "[group] [link [course]]", "[группа] [ссылка [курс]]"),
+                            ["/groupsheet " + tr(lang, "[group] [link [short name]]", "[группа] [ссылка [имя]]"),
                              tr(lang, "a group's shared sheets: everyone in it follows them",
                                 "общие таблицы группы: на них подписаны все в ней")],
-                            ["/course " + tr(lang, "<link> [course]", "<ссылка> [курс]"),
-                             tr(lang, "a sheet's course, up to 10 characters: its short name and hashtag; without "
-                                      "one, the sheet's title in Google",
-                                "курс таблицы, до 10 символов: её короткое имя и хэштег; без курса — название "
-                                "таблицы в Google")],
+                            ["/rename " + tr(lang, "<link> [short name]", "<ссылка> [имя]"),
+                             tr(lang, "a sheet's short name and hashtag, up to 10 characters, for everyone who "
+                                      "follows it; without one, its title in Google",
+                                "короткое имя и хэштег таблицы, до 10 символов, у всех её подписчиков; без имени — "
+                                "название таблицы в Google")],
                             ["/relayout " + tr(lang, "<link>", "<ссылка>"),
                              tr(lang, "lay a sheet's tabs out again", "разметить вкладки таблицы заново")],
                             ["/status", tr(lang, "sheets, errors, users, Haiku spending",
@@ -338,8 +338,8 @@ class OwnerCommands:
                 await self.api.send(chat, Doc().p(
                     tr(lang, "Group ", "Группа "), b(group["name"]), tr(lang, " is made. Its sheets: ", " создана. "
                                                                          "Её таблицы: "),
-                    code(tr(lang, f"/groupsheet {group['name']} <link> [course]",
-                            f"/groupsheet {group['name']} <ссылка> [курс]")),
+                    code(tr(lang, f"/groupsheet {group['name']} <link> [short name]",
+                            f"/groupsheet {group['name']} <ссылка> [имя]")),
                     tr(lang, "; a code to it: ", "; код в неё: "), code(f"/invite {group['name']}")))
                 return
             if len(words) == 2:
@@ -386,7 +386,7 @@ class OwnerCommands:
 
     async def cmd_groupsheet(self, chat: int, arg: str, lang: str) -> None:
         """`/groupsheet` lists every group's sheets, `/groupsheet <group>` one group's, and
-        `/groupsheet [group] <link> [course]` gives a group a sheet; the group may be left out when there is one."""
+        `/groupsheet [group] <link> [short name]` gives a group a sheet; the group may be left out when there is one."""
         words, groups = arg.split(), self.groups.all()
         group = self.groups.find(words[0]) if words else None
         if group is not None:
@@ -399,7 +399,7 @@ class OwnerCommands:
         if group is None:
             await self.api.send(chat, Doc().p(
                 tr(lang, "Which group? ", "Какой группе? "),
-                code(tr(lang, "/groupsheet <group> <link> [course]", "/groupsheet <группа> <ссылка> [курс]")),
+                code(tr(lang, "/groupsheet <group> <link> [short name]", "/groupsheet <группа> <ссылка> [имя]")),
                 ". ", tr(lang, "Groups: ", "Группы: ") if groups else tr(lang, "Make one first: ", "Сначала создай: "),
                 ", ".join(g["name"] for g in groups) if groups else code(tr(lang, "/groups <name>", "/groups <имя>"))))
             return
@@ -435,10 +435,10 @@ class OwnerCommands:
         doc.h(tr(lang, "Group ", "Группа ") + f"{group['name']} · {len(sheets)}")
         if not sheets:
             return doc.p(tr(lang, "No shared sheets yet: ", "Общих таблиц пока нет: "),
-                         code(tr(lang, f"/groupsheet {group['name']} <link> [course]",
-                                 f"/groupsheet {group['name']} <ссылка> [курс]")))
+                         code(tr(lang, f"/groupsheet {group['name']} <link> [short name]",
+                                 f"/groupsheet {group['name']} <ссылка> [имя]")))
         doc.table(
-            [tr(lang, "Sheet", "Таблица"), tr(lang, "Course", "Курс"), tr(lang, "Followers", "Подписаны")],
+            [tr(lang, "Sheet", "Таблица"), tr(lang, "Short name", "Имя"), tr(lang, "Followers", "Подписаны")],
             [[link(s["title"] or s["sheet_id"][-6:], s["url"]), s["course"] or "—", str(s["followers"])]
              for s in sheets], [None, None, "right"])
         off = tr(lang, "Not shared: ", "Убрать из общих: ")
@@ -446,10 +446,11 @@ class OwnerCommands:
             doc.buttons((off + sheet_name(s), f"gr:{gid}.{s['id']}", "danger"))
         return doc
 
-    async def cmd_course(self, chat: int, arg: str, lang: str) -> None:
+    async def cmd_rename(self, chat: int, arg: str, lang: str) -> None:
+        """`/rename <link> [short name]`: the sheet's short name and hashtag (its `course`) for all its followers."""
         url, _, course = arg.partition(" ")
         if not url:
-            await self.api.send(chat, Doc().p(code(tr(lang, "/course <link> [course]", "/course <ссылка> [курс]")))
+            await self.api.send(chat, Doc().p(code(tr(lang, "/rename <link> [short name]", "/rename <ссылка> [имя]")))
                                 .p(self.no_course(lang)))
             return
         try:
@@ -457,14 +458,16 @@ class OwnerCommands:
         except SheetError as e:
             await self.api.send(chat, self.sheet_error(e, lang))
             return
-        await self.api.send(chat, Doc().p(tr(lang, "Course: ", "Курс: "), b(sheet["course"]), ".") if sheet["course"]
-                            else Doc().p(tr(lang, "No course. ", "Курса нет. "), self.no_course(lang)))
+        await self.api.send(chat, Doc().p(tr(lang, "Short name: ", "Имя: "), b(sheet["course"]), ".")
+                            if sheet["course"] else
+                            Doc().p(tr(lang, "No short name. ", "Короткого имени нет. "), self.no_course(lang)))
 
     @staticmethod
     def no_course(lang: str) -> str:
-        return tr(lang, "Without a course the bot names a sheet by its title in Google, and its hashtag is the first "
-                        "8 characters of the title.",
-                  "Без курса бот называет таблицу её названием в Google, а хэштег — первые 8 символов названия.")
+        return tr(lang, "Without a short name the bot names a sheet by its title in Google, and its hashtag is the "
+                        "first 8 characters of the title.",
+                  "Без короткого имени бот называет таблицу её названием в Google, а хэштег — первые 8 символов "
+                  "названия.")
 
     async def cmd_relayout(self, chat: int, arg: str, lang: str) -> None:
         try:
@@ -573,7 +576,7 @@ class OwnerCommands:
     def sheet_error(error: SheetError, lang: str) -> str:
         text = str(error)
         if "at most" in text:
-            return tr(lang, "A course has at most 10 characters.", "В курсе не больше 10 символов.")
+            return tr(lang, "A short name has at most 10 characters.", "В коротком имени не больше 10 символов.")
         if "nobody" in text:
             return tr(lang, "Nobody follows this sheet.", "На эту таблицу никто не подписан.")
         return tr(lang, "That's not a Google Sheets link: https://docs.google.com/spreadsheets/d/…",

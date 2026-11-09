@@ -32,11 +32,11 @@ USER_COMMANDS = {
 }
 OWNER_COMMANDS = {
     "en": [("invite", "a one-time invite code"), ("codes", "unused codes"), ("users", "users"),
-           ("groups", "groups"), ("groupsheet", "the groups' shared sheets"), ("course", "a sheet's course"),
+           ("groups", "groups"), ("groupsheet", "the groups' shared sheets"), ("rename", "a sheet's short name"),
            ("relayout", "lay a sheet out again"), ("status", "sheets, users, Haiku"),
            ("interval", "how often the sheets are read"), ("help", "commands")],
     "ru": [("invite", "одноразовый код приглашения"), ("codes", "неиспользованные коды"), ("users", "пользователи"),
-           ("groups", "группы"), ("groupsheet", "общие таблицы групп"), ("course", "курс таблицы"),
+           ("groups", "группы"), ("groupsheet", "общие таблицы групп"), ("rename", "короткое имя таблицы"),
            ("relayout", "разметить таблицу заново"),
            ("status", "таблицы, пользователи, Haiku"), ("interval", "как часто читать таблицы"),
            ("help", "команды")],

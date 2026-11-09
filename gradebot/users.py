@@ -101,10 +101,10 @@ class UserCommands:
         rows = [["/grades", tr(lang, "your grades, the new ones marked", "твои оценки, новые отмечены")],
                 ["/name " + tr(lang, "Surname Name", "Фамилия Имя"),
                  tr(lang, "your full name as the sheets have it", "ФИО, как в таблицах")],
-                ["/sheet " + tr(lang, "<link> [course]", "<ссылка> [курс]"),
-                 tr(lang, "follow a Google Sheet; the course is its short name and hashtag, without one the sheet's "
-                          "title in Google",
-                    "подписаться на таблицу; курс — её короткое имя и хэштег, без него — название таблицы в Google")],
+                ["/sheet " + tr(lang, "<link> [short name]", "<ссылка> [имя]"),
+                 tr(lang, "follow a Google Sheet; the short name is also its hashtag, without one the sheet's title in "
+                          "Google",
+                    "подписаться на таблицу; короткое имя — это и хэштег, без него — название таблицы в Google")],
                 ["/sheets", tr(lang, "your sheets, unfollow", "твои таблицы, отписка")],
                 ["/group", tr(lang, "your group: you follow its shared sheets", "твоя группа: её общие таблицы")],
                 ["/quiet", tr(lang, "quiet hours", "тихие часы")],
@@ -156,8 +156,9 @@ class UserCommands:
     # --- sheets ----------------------------------------------------------------------------------
 
     async def cmd_sheet(self, chat: int, user: dict, arg: str) -> None:
-        """`/sheet <link> [course]`. The course is the sheet's short name and hashtag, for a sheet new to the bot
-        only: without one the bot names the sheet by its title in Google, and later only the owner changes it."""
+        """`/sheet <link> [short name]`. The short name (the sheet's `course`) is also its hashtag, and counts for a
+        sheet new to the bot only: without one the bot names the sheet by its title in Google, and later only the
+        owner changes it."""
         lang = user["lang"]
         if not arg:
             await self.api.send(chat, Doc().p(tr(lang, "Send the sheet's link: ", "Пришли ссылку на таблицу: "),
@@ -189,19 +190,19 @@ class UserCommands:
 
     @staticmethod
     def course_hint(lang: str) -> Html:
-        return join(tr(lang, "After the link you may add a course, the sheet's short name and hashtag, up to 10 "
-                             "characters: ",
-                       "После ссылки можно добавить курс — короткое имя таблицы и хэштег, до 10 символов: "),
+        return join(tr(lang, "After the link you may add a short name for the sheet, up to 10 characters; it is its "
+                             "hashtag too: ",
+                       "После ссылки можно добавить короткое имя таблицы, до 10 символов; оно же хэштег: "),
                     code(tr(lang, "/sheet <link> Calc", "/sheet <ссылка> Матан")), ". ",
                     tr(lang, "Without it the bot takes the sheet's title in Google. It counts only if the bot doesn't "
                              "read the sheet yet; later only the owner changes it.",
-                       "Без курса бот берёт название таблицы в Google. Курс учитывается, только если бот ещё не "
+                       "Без имени бот берёт название таблицы в Google. Имя учитывается, только если бот ещё не "
                        "читает таблицу; потом его меняет только владелец."))
 
     @staticmethod
     def follow_error(error: SheetError, lang: str) -> str:
         if "course" in str(error):
-            return tr(lang, "A course has at most 10 characters.", "В курсе не больше 10 символов.")
+            return tr(lang, "A short name has at most 10 characters.", "В коротком имени не больше 10 символов.")
         if "at most" in str(error):
             return tr(lang, "You follow 20 sheets already: unfollow one in /sheets.",
                       "У тебя уже 20 таблиц: отпишись от какой-нибудь в /sheets.")
@@ -236,7 +237,7 @@ class UserCommands:
             Doc().p(self.who(user), tr(owner, " asks to follow a sheet the bot doesn't read yet: ",
                                        " просит подписать его на таблицу, которую бот ещё не читает: "),
                     link(request["url"], request["url"]),
-                    *([tr(owner, ", course ", ", курс "), b(request["course"])] if request["course"] else []))
+                    *([tr(owner, ", short name ", ", имя "), b(request["course"])] if request["course"] else []))
             .buttons((tr(owner, "Approve", "Одобрить"), f"sa:{request['id']}", "success"),
                      (tr(owner, "Decline", "Отклонить"), f"sd:{request['id']}", "danger")))
 

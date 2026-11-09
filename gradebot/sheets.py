@@ -34,6 +34,11 @@ def parse_url(url: str) -> tuple[str, str]:
     return found[1], f"https://docs.google.com/spreadsheets/d/{found[1]}"
 
 
+# A sheet's course is its short name: what the bot calls it in /sheets and on buttons, and its hashtag. The owner sets
+# it with /rename; a user who brings a sheet new to the bot may give it with /sheet. The name comes from infomaster,
+# where it is the course in front of a work's label.
+
+
 def course(text: str) -> str:
     value = " ".join(text.split())
     if len(value) > COURSE_CHARS:

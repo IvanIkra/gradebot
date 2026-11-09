@@ -17,7 +17,7 @@ to the Bot API by long polling.
 | anyone | `/start <code>` | come in with an invite code (the `t.me/<bot>?start=<code>` link does the same) |
 | user | `/grades` | your grades by sheet, the new ones of the last week marked; "Wrong" reports a bad layout to the owner |
 | user | `/name Surname Name` | your full name exactly as the sheets have it; the owner sees it and may reset it |
-| user | `/sheet <link> [course]` | follow a Google Sheet (open to anyone with the link); a member's sheet the bot does not read yet waits for the owner's approval. The course is the sheet's short name and hashtag, kept only for a sheet new to the bot; without it the bot names the sheet by its title in Google |
+| user | `/sheet <link> [short name]` | follow a Google Sheet (open to anyone with the link); a member's sheet the bot does not read yet waits for the owner's approval. The short name is also the sheet's hashtag and is kept only for a sheet new to the bot; without it the bot names the sheet by its title in Google |
 | user | `/sheets` | your sheets: when each was read, how many grades, what is wrong; check now or unfollow |
 | user | `/group` | your group, with buttons to move to another one: you follow the shared sheets of your group. A group that came with the invite code is changed by the owner only |
 | user | `/quiet [23-8\|off]` | quiet hours: messages then come without a sound; 23:00–8:00 by default |
@@ -28,8 +28,8 @@ to the Bot API by long polling.
 | owner | `/codes` | unused codes, with a button to revoke each |
 | owner | `/users` | users, with buttons to trust each (their new sheets need no approval), move them to another group or delete them |
 | owner | `/groups [name [new name]]` | groups: make one, rename one; buttons show a group's sheets or delete it |
-| owner | `/groupsheet [group] [link [course]]` | a group's shared sheets: everyone in the group follows them, newcomers too |
-| owner | `/course <link> [course]` | a sheet's course, its short name and hashtag (up to 10 characters); without one, the sheet's title in Google |
+| owner | `/groupsheet [group] [link [short name]]` | a group's shared sheets: everyone in the group follows them, newcomers too |
+| owner | `/rename <link> [short name]` | a sheet's short name and hashtag (up to 10 characters) for everyone who follows it; without one, its title in Google |
 | owner | `/relayout <link>` | drop a sheet's cached layout: its tabs are laid out again at once |
 | owner | `/status` | sheets and their errors, users, Haiku spending today and this month |
 | owner | `/interval [minutes]` | how often the sheets are read: 30 minutes by default, 5 to 240 |
@@ -61,7 +61,7 @@ buttons inside the message. When the Bot API server has no rich messages, the bo
 messages with the same content and the buttons as an inline keyboard.
 
 New grades come once a poll, in one message for all sheets (more only when it would not fit): a section per sheet
-headed by its title and the course's hashtag, a row per work with the grade on 0–10, the bonus, the sheet's own
+headed by its title and its short name as a hashtag, a row per work with the grade on 0–10, the bonus, the sheet's own
 points when its scale is not 0–10, and the grade before for a changed one. Within the user's quiet hours it comes
 without a sound. Grades that could not be sent wait for the next poll for up to a week; a user who blocked the bot
 is paused until they write to it again, and the owner is told.
