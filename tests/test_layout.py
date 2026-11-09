@@ -60,3 +60,17 @@ async def test_a_wide_tab_gets_room_for_its_answer(layouts, llm):
 
 def test_prompt_spells_out_cyrillic_letter_order():
     assert "в→C" in layout.LAYOUT_SYSTEM and '"HW 1C"' in layout.LAYOUT_SYSTEM
+
+
+def test_labels_come_in_both_languages():
+    assert "label_ru" in layout.LAYOUT_SCHEMA["properties"]["items"]["items"]["required"]
+    assert '"ДЗ 1В"' in layout.LAYOUT_SYSTEM
+    tab, rows = quizzes()
+    spec = {"skip": False, "header_rows": [1, 2, 3], "items": [
+        {"column": "E", "label": "Quiz 1", "label_ru": " Квиз  1 ", "max": 10, "bonus_column": None},
+        {"column": "G", "label": "Quiz 2", "max": 10, "bonus_column": None}]}   # a layout from before label_ru
+    first, second = layout.extract(rows[0], spec)
+    assert (first.label, first.label_ru) == ("Quiz 1", "Квиз 1") and second.label_ru == ""
+    assert layout.label({"label": "Quiz 1", "label_ru": "Квиз 1"}, "ru") == "Квиз 1"
+    assert layout.label({"label": "Quiz 1", "label_ru": "Квиз 1"}, "en") == "Quiz 1"
+    assert layout.label({"label": "Quiz 2", "label_ru": None}, "ru") == "Quiz 2"

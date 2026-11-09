@@ -73,9 +73,9 @@ async def test_one_download_and_one_layout_for_every_follower(google, poller, tw
     [news] = api.sent()[sent:]                              # one message, to Ivan only
     assert news["chat_id"] == 1 and news["method"] == "sendRichMessage"
     assert f'<h3><a href="{URL.split("/edit")[0]}">Матанализ "1"</a> #Матанали</h3>' in news["text"]
-    assert ('<tr><td>HW 1A</td><td align="right"><b>9</b> +1</td><td align="right">6.3 из 7</td>'
+    assert ('<tr><td>ДЗ 1А</td><td align="right"><b>9</b> +1</td><td align="right">6.3 из 7</td>'
             '<td align="right">8.4</td></tr>') in news["text"]
-    assert '<tr><td>Quiz 1</td><td align="right"><b>9</b></td><td align="right"></td><td align="right">8</td>' \
+    assert '<tr><td>Квиз 1</td><td align="right"><b>9</b></td><td align="right"></td><td align="right">8</td>' \
         in news["text"]
     assert buttons(news) == {"Все оценки": "grades"}
     assert ("disable_notification", True) not in api.calls[-1][1].items()  # 15:00 in Moscow: not quiet

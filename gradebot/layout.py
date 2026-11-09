@@ -1,7 +1,8 @@
 """The layout of a tab by Haiku, and the grades it gives a student's row (spec §5.2).
 
 Haiku sees a tab's name, its top rows above a student's row and that row without the name, and says which top rows
-are the header, which columns are graded works, their maximum, a bonus column and a short English label. A layout
+are the header, which columns are graded works, their maximum, a bonus column and a short label in English and in
+Russian: a user sees the one of their language. A layout
 does not depend on the student, so it is one for everyone who follows the sheet: it is asked with the row of any
 follower that has numbers in the tab, and cached in kv by sheet, tab and label budget together with the text of the
 header rows it named. While that text stays, the layout stands, whatever the other rows do; a changed header asks
@@ -23,10 +24,10 @@ log = logging.getLogger(__name__)
 
 LABEL_BUDGET = 23       # characters of "<course> <work>": "Calc HW 3"
 MIN_BUDGET = 8
-LAYOUT_VERSION = 1      # bump when the prompt changes, to drop the cached layouts
+LAYOUT_VERSION = 2      # bump when the prompt changes, to drop the cached layouts (2: label_ru)
 PREFIX = "layout:"      # kv: + the sheet's Google id, ":", the tab's hash, ":", the budget
 MAX_TOKENS = 4000
-TOKENS_PER_WORK = 60    # {"column", "label", "max", "bonus_column"}: a tab of dates must not cut the answer
+TOKENS_PER_WORK = 80    # {"column", "label", "label_ru", "max", "bonus_column"}: a tab of dates must not cut it
 
 LAYOUT_SYSTEM = """You map one tab of a teacher's grade sheet to the graded works shown to a student.
 
@@ -59,6 +60,9 @@ For each graded work:
   "Project", "Extra 2", "LMS". Dates as "HW Sep 17". No course name - it is added separately.
   Russian letter suffixes go by alphabet position, not by shape: а→A, б→B, в→C, г→D, д→E
   (tab "ДЗ-1В" is "HW 1C", not "HW 1B"). Labels must differ between works.
+- label_ru: the same label in Russian, telegraphic, at most {budget} characters: "ДЗ 1А", "Квиз 2", "Сем 3",
+  "КР 1", "Экзамен", "Проект", "Доп 2", "LMS". Dates as "ДЗ 17 сен". Russian letter suffixes stay as in the
+  sheet (tab "ДЗ-1В" is "ДЗ 1В"). Labels must differ between works.
 
 List works in sheet order."""
 
@@ -75,10 +79,11 @@ LAYOUT_SCHEMA = {
                 "properties": {
                     "column": {"type": "string"},
                     "label": {"type": "string"},
+                    "label_ru": {"type": "string"},
                     "max": {"anyOf": [{"type": "number"}, {"type": "null"}]},
                     "bonus_column": {"anyOf": [{"type": "string"}, {"type": "null"}]},
                 },
-                "required": ["column", "label", "max", "bonus_column"],
+                "required": ["column", "label", "label_ru", "max", "bonus_column"],
                 "additionalProperties": False,
             },
         },
@@ -135,6 +140,12 @@ class Item:
     max: float
     bonus: float | None
     position: int
+    label_ru: str = ""      # the label in Russian; "" when the layout has none
+
+
+def label(item: dict, lang: str) -> str:
+    """A work's label in the user's language: the Russian one when there is one."""
+    return (item.get("label_ru") or item["label"]) if lang == "ru" else item["label"]
 
 
 def extract(row: Row, spec: dict, start: int = 0) -> list[Item]:
@@ -156,7 +167,8 @@ def extract(row: Row, spec: dict, start: int = 0) -> list[Item]:
         bonus = number(row.cells.get(it["bonus_column"])) if it.get("bonus_column") else None
         keys.add(key)
         items.append(Item(key, row.tab.title, header, " ".join(str(it.get("label") or "").split()),
-                          round(value, 2), raw, maximum, bonus or None, start + len(items)))
+                          round(value, 2), raw, maximum, bonus or None, start + len(items),
+                          " ".join(str(it.get("label_ru") or "").split())))
     return items
 
 

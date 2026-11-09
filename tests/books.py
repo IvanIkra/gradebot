@@ -46,12 +46,12 @@ def spec(prompt: str) -> dict:
     tab = prompt.split('"')[1]
     if tab == "ДЗ-1А":
         return {"skip": False, "reason": "", "header_rows": [1, 2], "items": [
-            {"column": "F", "label": "HW 1A", "max": 7, "bonus_column": "G"}]}
+            {"column": "F", "label": "HW 1A", "label_ru": "ДЗ 1А", "max": 7, "bonus_column": "G"}]}
     shift = 1 if "C=Средний балл" in prompt else 0
     quiz1, quiz2 = "EF"[shift], "GH"[shift]
     return {"skip": False, "reason": "", "header_rows": [1, 2, 3, 99], "items": [  # 99: not a row it was shown
-        {"column": quiz1, "label": "Quiz 1", "max": 10, "bonus_column": None},
-        {"column": quiz2, "label": "Quiz 2", "max": 10, "bonus_column": None}]}
+        {"column": quiz1, "label": "Quiz 1", "label_ru": "Квиз 1", "max": 10, "bonus_column": None},
+        {"column": quiz2, "label": "Quiz 2", "label_ru": "Квиз 2", "max": 10, "bonus_column": None}]}
 
 
 class FakeLLM:

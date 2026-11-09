@@ -56,17 +56,18 @@ class Grades:
                     continue  # a placeholder for "not graded yet"
                 seen.add(item.key)
                 db.execute(
-                    "insert into grade_items(tg_id, sheet, key, tab, header, label, value, raw, max, bonus, position) "
-                    "values(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) on conflict(tg_id, sheet, key) do update set "
-                    "label = excluded.label, value = excluded.value, raw = excluded.raw, max = excluded.max, "
-                    "bonus = excluded.bonus, position = excluded.position, gone = 0",
-                    (tg_id, sheet, item.key, item.tab, item.header, item.label, item.value, item.raw, item.max,
-                     item.bonus, item.position))
+                    "insert into grade_items(tg_id, sheet, key, tab, header, label, label_ru, value, raw, max, bonus, "
+                    "position) values(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) on conflict(tg_id, sheet, key) do update set "
+                    "label = excluded.label, label_ru = excluded.label_ru, value = excluded.value, raw = excluded.raw, "
+                    "max = excluded.max, bonus = excluded.bonus, position = excluded.position, gone = 0",
+                    (tg_id, sheet, item.key, item.tab, item.header, item.label, item.label_ru or None, item.value,
+                     item.raw, item.max, item.bonus, item.position))
                 changed = old is None or old["value"] != item.value or (old["bonus"] or 0) != (item.bonus or 0)
                 if changed and not first:
-                    db.execute("insert into grade_events(tg_id, sheet, key, label, value, raw, max, bonus, previous, "
-                               "seen_at) values(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                               (tg_id, sheet, item.key, item.label, item.value, item.raw, item.max, item.bonus,
+                    db.execute("insert into grade_events(tg_id, sheet, key, label, label_ru, value, raw, max, bonus, "
+                               "previous, seen_at) values(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                               (tg_id, sheet, item.key, item.label, item.label_ru or None, item.value, item.raw,
+                                item.max, item.bonus,
                                 old["value"] if old else None, now))
             # A moved work lives under its new key now; the others that left may come back.
             db.executemany("delete from grade_items where tg_id = ? and sheet = ? and key = ?",

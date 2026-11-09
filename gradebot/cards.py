@@ -1,13 +1,15 @@
 """Grades as messages (spec §6.2, §6.3): new grades after a poll, and /grades.
 
 A sheet is a section headed by its title, linked to the sheet, and its course's hashtag; a work is a table row: its
-label (without the course, the heading has it), the grade on 0-10 with the bonus, the sheet's own points when its
-scale is not 0-10, and the grade before for a changed one. Columns empty in the whole section are left out.
+label in the user's language (without the course, the heading has it), the grade on 0-10 with the bonus, the sheet's
+own points when its scale is not 0-10, and the grade before for a changed one. Columns empty in the whole section are
+left out.
 """
 
 import re
 
 from .i18n import tr
+from .layout import label
 from .rich import Doc, b, join, link, mark
 from .sheets import course_of
 
@@ -44,9 +46,10 @@ def grade_cell(row: dict, new: bool = False) -> str:
 
 
 def works_table(doc: Doc, rows: list[dict], lang: str, with_previous: bool) -> Doc:
-    """Rows: {label, value, raw, max, bonus, previous?, new?}."""
+    """Rows: {label, label_ru?, value, raw, max, bonus, previous?, new?}."""
     of = tr(lang, "of", "из")
-    columns = [(tr(lang, "Work", "Задание"), None, lambda r: mark(r["label"]) if r.get("new") else r["label"]),
+    columns = [(tr(lang, "Work", "Задание"), None,
+                lambda r: mark(label(r, lang)) if r.get("new") else label(r, lang)),
                (tr(lang, "Grade", "Оценка"), RIGHT, lambda r: grade_cell(r, r.get("new", False))),
                (tr(lang, "Points", "Баллы"), RIGHT,
                 lambda r: f"{points(r['raw'])} {of} {points(r['max'])}" if r["max"] != 10 else "")]

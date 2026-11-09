@@ -44,7 +44,8 @@ matter, the name matches the start of a cell). A name that matches two rows of o
 it longer.
 
 Claude Haiku lays out each tab once for all followers: which top rows are the header, which columns are graded works,
-their maximum points, a bonus column and a short label. The layout is cached while the header rows keep their text.
+their maximum points, a bonus column and a short label in English and in Russian (each user sees the one of their
+language). The layout is cached while the header rows keep their text.
 Grades are put on a 0–10 scale. The first read of a sheet for a user is a snapshot; after it, a new or changed grade
 is news. A zero before any real grade is a placeholder, a grade that leaves the sheet and comes back unchanged is no
 news, and a column shifted by an insertion is the same work.

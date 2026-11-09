@@ -85,6 +85,7 @@ create table if not exists grade_items (    -- the current grade of every work o
     tab text not null,
     header text not null,           -- the column's header: a work whose column moved is found by it
     label text not null,            -- the work without the course: "HW 1A"
+    label_ru text,                  -- the same in Russian: "ДЗ 1А"; null for a layout from before it
     value real not null,            -- 0-10
     raw real not null,              -- the points as the sheet has them
     max real not null,              -- out of
@@ -101,6 +102,7 @@ create table if not exists grade_events (   -- new and changed grades, waiting t
     sheet integer not null,
     key text not null,
     label text not null,
+    label_ru text,
     value real not null,
     raw real not null,
     max real not null,
@@ -148,6 +150,8 @@ UPGRADES = (
     ("users", "rank", "integer not null default 0", "update users set rank = 1"),  # who was in before ranks is trusted
     ("users", "grp", "integer references groups(id) on delete set null"),
     ("invites", "grp", "integer references groups(id) on delete set null"),
+    ("grade_items", "label_ru", "text"),
+    ("grade_events", "label_ru", "text"),
 )
 FIRST_GROUP = "group"   # the group the shared sheets of a database from before groups go to, with every user
 

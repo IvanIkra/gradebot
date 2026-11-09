@@ -13,6 +13,7 @@ from .access import TRUSTED
 from .cards import grades_section
 from .groups import GroupError
 from .i18n import LANGUAGES, tr
+from .layout import label
 from .notices import explain
 from .profile import ProfileError
 from .rich import Doc, b, code, link
@@ -353,7 +354,7 @@ class UserCommands:
         owner = self.owner_lang
         tabs: dict[str, list[str]] = {}
         for item in self.grades.items(user["tg_id"], sheet_id):
-            tabs.setdefault(item["tab"], []).append(f"{item['label']} ({item['header'] or '—'})")
+            tabs.setdefault(item["tab"], []).append(f"{label(item, owner)} ({item['header'] or '—'})")
         doc = Doc().p(self.who(user), tr(owner, " says the layout of ", " считает неверной разметку "),
                       link(sheet_name(sheet), sheet["url"]), tr(owner, " is wrong.", "."))
         doc.table([tr(owner, "Tab", "Вкладка"), tr(owner, "Works laid out (header)", "Задания (заголовок)")],
