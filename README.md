@@ -19,14 +19,16 @@ to the Bot API by long polling.
 | user | `/name Surname Name` | your full name exactly as the sheets have it; the owner sees it and may reset it |
 | user | `/sheet <link>` | follow a Google Sheet (open to anyone with the link); a member's sheet the bot does not read yet waits for the owner's approval |
 | user | `/sheets` | your sheets: when each was read, how many grades, what is wrong; check now or unfollow |
+| user | `/group` | your group, with buttons to move to another one: you follow the shared sheets of your group |
 | user | `/quiet [23-8\|off]` | quiet hours: messages then come without a sound; 23:00–8:00 by default |
 | user | `/lang [en\|ru]` | the bot's language |
 | user | `/help` | the commands |
 | user | `/stop` | erase everything the bot keeps about you and leave |
-| owner | `/invite [note]` | a one-time invite code and its link |
+| owner | `/invite [group] [note]` | a one-time invite code and its link; with a group the user lands in it, without one they pick it |
 | owner | `/codes` | unused codes, with a button to revoke each |
 | owner | `/users` | users, with buttons to trust each (their new sheets need no approval) or delete them |
-| owner | `/groupsheet [link [course]]` | the group's sheets: every user follows them, new users too |
+| owner | `/groups [name [new name]]` | groups: make one, rename one; buttons show a group's sheets or delete it |
+| owner | `/groupsheet [group] [link [course]]` | a group's shared sheets: everyone in the group follows them, newcomers too |
 | owner | `/course <link> <course>` | a sheet's course, the short name in front of its works (up to 10 characters) |
 | owner | `/relayout <link>` | drop a sheet's cached layout: its tabs are laid out again at once |
 | owner | `/status` | sheets and their errors, users, Haiku spending today and this month |

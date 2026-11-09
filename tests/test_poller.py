@@ -176,6 +176,7 @@ async def test_relayout_drops_the_cache(google, poller, two, bot, api, llm):
 
 async def test_a_group_sheet_is_read_for_everyone_at_once(google, poller, bot, api, access):
     add_user(access, 1, IVAN)
+    bot.groups.join(1, bot.groups.create("A1")["id"])
     await bot.handle(message(OWNER, f"/groupsheet {URL} Calc"))
     [read] = await poller.poll(full=False)
     assert read.requested == set() and [u.first for u in read.users] == [True]

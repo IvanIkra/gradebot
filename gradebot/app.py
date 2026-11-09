@@ -24,19 +24,20 @@ OFFSET = "updates.offset"   # kv: the next update to ask for, so a restart neith
 
 USER_COMMANDS = {
     "en": [("grades", "your grades"), ("sheets", "your sheets"), ("sheet", "follow a Google Sheet"),
-           ("name", "your full name"),
+           ("group", "your group"), ("name", "your full name"),
            ("quiet", "quiet hours"), ("lang", "language"), ("help", "commands"), ("stop", "erase your data and leave")],
     "ru": [("grades", "твои оценки"), ("sheets", "твои таблицы"), ("sheet", "подписаться на таблицу"),
-           ("name", "ФИО"),
+           ("group", "твоя группа"), ("name", "ФИО"),
            ("quiet", "тихие часы"), ("lang", "язык"), ("help", "команды"), ("stop", "удалить свои данные и уйти")],
 }
 OWNER_COMMANDS = {
     "en": [("invite", "a one-time invite code"), ("codes", "unused codes"), ("users", "users"),
-           ("groupsheet", "the group's sheets"), ("course", "a sheet's course"),
+           ("groups", "groups"), ("groupsheet", "the groups' shared sheets"), ("course", "a sheet's course"),
            ("relayout", "lay a sheet out again"), ("status", "sheets, users, Haiku"),
            ("interval", "how often the sheets are read"), ("help", "commands")],
     "ru": [("invite", "одноразовый код приглашения"), ("codes", "неиспользованные коды"), ("users", "пользователи"),
-           ("groupsheet", "общие таблицы"), ("course", "курс таблицы"), ("relayout", "разметить таблицу заново"),
+           ("groups", "группы"), ("groupsheet", "общие таблицы групп"), ("course", "курс таблицы"),
+           ("relayout", "разметить таблицу заново"),
            ("status", "таблицы, пользователи, Haiku"), ("interval", "как часто читать таблицы"),
            ("help", "команды")],
 }

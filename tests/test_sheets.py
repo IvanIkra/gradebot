@@ -48,20 +48,6 @@ def test_limit(sheets, users):
         sheets.follow(PETR, CALC)
 
 
-def test_group_sheets(sheets, users, access):
-    sheet, added = sheets.add_group(CALC, 1000, "Матан")
-    assert added == 2 and sheet["course"] == "Матан" and sheet["group_sheet"] == 1
-    assert sheets.unfollow(ANNA, sheet["id"])      # a group sheet can be unfollowed and stays
-    assert sheets.get(sheet["id"]) is not None
-    _, code = access.invite()
-    access.redeem(code, NewUser(2003, "Ира", None, "ru"))
-    assert sheets.follow_group(2003) == 1
-    assert [s["followers"] for s in sheets.group()] == [2]
-    assert sheets.remove_group(sheet["id"])
-    assert sheets.follow_group(2004) == 0
-    assert sorted(sheets.followers(sheet["id"])) == [PETR, 2003]
-
-
 def test_courses(sheets, users):
     sheets.follow(PETR, CALC)
     assert sheets.set_course(CALC, "  Мат  ан ")["course"] == "Мат ан"
@@ -71,9 +57,15 @@ def test_courses(sheets, users):
         sheets.set_course(ALG, "Алг")
 
 
-def test_deleting_a_user_drops_their_own_sheets(sheets, users, access):
+def test_deleting_a_user_drops_their_own_sheets(sheets, users, access, store):
+    from gradebot.groups import Groups
+
+    groups = Groups(store, sheets)
+    gid = groups.create("A1")["id"]
+    groups.join(PETR, gid)
+    groups.join(ANNA, gid)
     own, _ = sheets.follow(PETR, CALC)
-    group, _ = sheets.add_group(ALG, 1000)
+    group, _ = groups.add_sheet(gid, ALG, 1000)
     access.delete(PETR)
     sheets.drop_orphans()
     assert sheets.get(own["id"]) is None and sheets.get(group["id"]) is not None

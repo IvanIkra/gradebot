@@ -12,16 +12,17 @@ from collections.abc import Callable
 from . import clock
 from .access import Access, NewUser, normalise
 from .grades import Grades
+from .groups import Groups
 from .i18n import guess, tr
 from .llm.budget import Budget
 from .notices import ReadNotices
 from .owner import OwnerCommands
 from .poller import Poller
-from .rich import Doc, Html, code, join
+from .rich import Doc, Html, b, code, join
 from .sheets import Sheets
 from .store import Store
 from .telegram import BotApi, TelegramError
-from .users import UserCommands
+from .users import UserCommands, group_buttons
 
 log = logging.getLogger(__name__)
 
@@ -47,6 +48,7 @@ class Bot(OwnerCommands, UserCommands, ReadNotices):
         self.api, self.store, self.access, self.sheets = api, store, access, sheets
         self.owner_id, self.zone, self.username, self.now = owner_id, zone, username, now
         self.grades = Grades(store, now)
+        self.groups = Groups(store, sheets, now)
         self.poller: Poller | None = None   # set by the service; without it nothing is read
         self.budget: Budget | None = None   # set by the service: the owner's /status shows the spending
         self._tasks: set[asyncio.Task] = set()
@@ -146,26 +148,37 @@ class Bot(OwnerCommands, UserCommands, ReadNotices):
         if candidate:
             new = NewUser(tg_id, full_name(sender), sender.get("username"), lang)
             if (invite := self.access.redeem(candidate, new)) is not None:
-                group = self.sheets.follow_group(tg_id)
-                await self.api.send(chat, self.welcome(lang, group))
+                group = self.groups.get(invite["grp"])
+                _, followed = self.groups.join(tg_id, group["id"]) if group else (0, [])
+                await self.api.send(chat, self.welcome(lang, group, len(followed)))
                 user = self.access.user(tg_id)
                 note = f" «{invite['note']}»" if invite["note"] else ""
+                owner = self.owner_lang
                 await self.tell_owner(
-                    Doc().p(self.who(user), tr(self.owner_lang, " came in with the code", " вошёл по коду"), note)
-                    .buttons((tr(self.owner_lang, "Delete", "Удалить"), f"du:{tg_id}", "danger")))
+                    Doc().p(self.who(user), tr(owner, " came in with the code", " вошёл по коду"), note,
+                            *([tr(owner, ", group ", ", группа "), group["name"]] if group else []))
+                    .buttons((tr(owner, "Delete", "Удалить"), f"du:{tg_id}", "danger")))
                 return
             if self.access.locked(tg_id):
                 return
         await self.api.send(chat, tr(lang, "You need an invite code to use this bot.",
                                      "Чтобы пользоваться ботом, нужен код приглашения."))
 
-    def welcome(self, lang: str, group: int) -> Doc:
+    def welcome(self, lang: str, group: dict | None, followed: int) -> Doc:
+        """The first message: the user's group, or a choice of one when the code carried none, and the full name."""
         doc = (Doc().h(tr(lang, "You're in", "Ты в деле"))
                .p(tr(lang, "I'll send you new grades from the Google Sheets of your courses as soon as they appear.",
                      "Я буду присылать новые оценки из таблиц Google твоих курсов, как только они появятся.")))
         if group:
-            doc.p(tr(lang, f"You already follow the group's sheets: {group}. The list is in /sheets.",
-                     f"Ты уже подписан на общие таблицы группы: {group}. Список — в /sheets."))
+            doc.p(tr(lang, "Your group: ", "Твоя группа: "), b(group["name"]), ". ",
+                  tr(lang, f"You follow its shared sheets: {followed}. The list is in /sheets.",
+                     f"Ты подписан на её общие таблицы: {followed}. Список — в /sheets.") if followed else "")
+        elif groups := self.groups.all():
+            doc.p(tr(lang, "Which group are you in? I'll follow its shared sheets for you. You can change it later "
+                           "with /group.",
+                     "В какой ты группе? Я подпишу тебя на её общие таблицы. Сменить группу можно потом: /group."))
+            group_buttons(doc, groups, "gj", lang)
         return doc.p(tr(lang, "First, your full name exactly as the sheets have it: ",
                         "Сначала ФИО — точно так, как в таблицах: "),
                      code(tr(lang, "/name Surname Name", "/name Фамилия Имя")))
+

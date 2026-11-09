@@ -2,7 +2,8 @@
 
 Callbacks: `grades` sends /grades, `rf` redraws it in place, `wr:<sheet>` complains about a sheet's layout,
 `ck:<sheet>` reads a sheet now, `us:<sheet>` unfollows it, `cr:<request>` cancels a request for a sheet waiting for
-the owner, `qt:<hours|off>` sets quiet hours, `lg:<en|ru>` the language, `stop` and `stop!` cancel and confirm /stop.
+the owner, `gp:<group>` moves the user to a group (0: none) from /group, `gj:<group>` from the first message,
+`qt:<hours|off>` sets quiet hours, `lg:<en|ru>` the language, `stop` and `stop!` cancel and confirm /stop.
 """
 
 import datetime as dt
@@ -10,6 +11,7 @@ import datetime as dt
 from . import clock, profile
 from .access import TRUSTED
 from .cards import grades_section
+from .groups import GroupError
 from .i18n import LANGUAGES, tr
 from .notices import explain
 from .profile import ProfileError
@@ -20,12 +22,22 @@ from .sheets import name as sheet_name
 COMPLAINTS_EVERY = dt.timedelta(days=1)     # one complaint about a sheet's layout a day from a user
 
 
+def group_buttons(doc: Doc, groups: list[dict], kind: str, lang: str, none: bool = True) -> Doc:
+    """A button for each group, four in a row, and «No group»: callback `<kind>:<group id>`, 0 for none."""
+    choice = [(g["name"], f"{kind}:{g['id']}") for g in groups]
+    if none:
+        choice.append((tr(lang, "No group", "Без группы"), f"{kind}:0"))
+    for start in range(0, len(choice), 4):
+        doc.buttons(*choice[start:start + 4])
+    return doc
+
+
 class UserCommands:
     async def user_command(self, chat: int, user: dict, cmd: str, arg: str) -> None:
         lang = user["lang"]
         handlers = {"/grades": self.cmd_grades, "/name": self.cmd_name, "/sheet": self.cmd_sheet,
-                    "/sheets": self.cmd_sheets, "/quiet": self.cmd_quiet, "/lang": self.cmd_lang,
-                    "/stop": self.cmd_stop}
+                    "/sheets": self.cmd_sheets, "/group": self.cmd_group, "/quiet": self.cmd_quiet,
+                    "/lang": self.cmd_lang, "/stop": self.cmd_stop}
         if cmd in handlers:
             await handlers[cmd](chat, user, arg)
         elif cmd == "/start" and not arg:
@@ -59,6 +71,8 @@ class UserCommands:
             found = self.sheets.drop_request(int(arg), user["tg_id"])
             await self.api.edit(chat, message_id, self.sheets_view(user))
             return tr(lang, "Request cancelled", "Заявка отменена") if found else None
+        if kind in ("gp", "gj") and arg.isdigit():
+            return await self.choose_group(chat, message_id, user, int(arg), kind == "gj")
         if kind == "qt":
             try:
                 self.access.set_quiet(user["tg_id"], profile.quiet(arg))
@@ -89,6 +103,7 @@ class UserCommands:
                 ["/sheet " + tr(lang, "<link>", "<ссылка>"),
                  tr(lang, "follow a Google Sheet", "подписаться на таблицу")],
                 ["/sheets", tr(lang, "your sheets, unfollow", "твои таблицы, отписка")],
+                ["/group", tr(lang, "your group: you follow its shared sheets", "твоя группа: её общие таблицы")],
                 ["/quiet", tr(lang, "quiet hours", "тихие часы")],
                 ["/lang", tr(lang, "language", "язык")],
                 ["/stop", tr(lang, "erase your data and leave", "удалить свои данные и уйти")]]
@@ -197,6 +212,53 @@ class UserCommands:
                     link(request["url"], request["url"]))
             .buttons((tr(owner, "Approve", "Одобрить"), f"sa:{request['id']}", "success"),
                      (tr(owner, "Decline", "Отклонить"), f"sd:{request['id']}", "danger")))
+
+    # --- the group -------------------------------------------------------------------------------
+
+    async def cmd_group(self, chat: int, user: dict, arg: str) -> None:
+        await self.api.send(chat, self.group_choice(user))
+
+    def group_choice(self, user: dict) -> Doc:
+        lang, groups = user["lang"], self.groups.all()
+        mine = self.groups.get(user["grp"])
+        doc = Doc().p(tr(lang, "Your group: ", "Твоя группа: "), b(mine["name"]) if mine else
+                      tr(lang, "none", "не выбрана"), ".")
+        others = [g for g in groups if not mine or g["id"] != mine["id"]]
+        if not others and not mine:
+            return doc.p(tr(lang, "There are no groups yet.", "Групп пока нет."))
+        doc.p(tr(lang, "In a group you follow its shared sheets. Moving to another one unfollows the old group's "
+                       "sheets (with their grades) and follows the new one's.",
+                 "В группе ты подписан на её общие таблицы. При переходе в другую группу подписки на таблицы старой "
+                 "снимаются (вместе с оценками), а на таблицы новой — добавляются."))
+        return group_buttons(doc, others, "gp", lang, none=mine is not None)
+
+    async def choose_group(self, chat: int, message_id: int, user: dict, gid: int, first: bool) -> str | None:
+        lang, before = user["lang"], self.groups.get(user["grp"])
+        try:
+            left, followed = self.groups.join(user["tg_id"], gid)
+        except GroupError:
+            return None
+        user = self.access.user(user["tg_id"])
+        group = self.groups.get(user["grp"])
+        if first:
+            await self.api.edit(chat, message_id, self.welcome(lang, group, len(followed)))
+        else:
+            doc = self.group_choice(user)
+            if left or followed:
+                doc.p(tr(lang, f"Unfollowed sheets: {left}, followed: {len(followed)}.",
+                         f"Отписал от таблиц: {left}, подписал на: {len(followed)}."))
+            await self.api.edit(chat, message_id, doc)
+        if (before or {}).get("id") != (group or {}).get("id"):
+            owner = self.owner_lang
+            if group is None:
+                news = [tr(owner, " left the group ", " вышел из группы "), b(before["name"])]
+            else:
+                news = [tr(owner, " is in the group ", " теперь в группе "), b(group["name"]),
+                        *([tr(owner, " (was ", " (была "), before["name"], ")"] if before else [])]
+            await self.tell_owner(Doc().p(self.who(user), *news))
+        if user["student"] and followed:
+            self.read_soon(user["tg_id"], followed)
+        return tr(lang, "Saved", "Сохранено")
 
     async def cmd_sheets(self, chat: int, user: dict, arg: str) -> None:
         await self.api.send(chat, self.sheets_view(user))

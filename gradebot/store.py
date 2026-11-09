@@ -5,10 +5,17 @@ import json
 import sqlite3
 from pathlib import Path
 
+from . import clock
+
 SCHEMA = """
 create table if not exists kv (
     key text primary key,
     value text not null             -- JSON
+);
+create table if not exists groups (         -- groups of users, each with its shared sheets
+    id integer primary key,
+    name text not null unique collate nocase,  -- one word: commands take it in front of the rest
+    created_at text not null
 );
 create table if not exists invites (
     id integer primary key,
@@ -18,7 +25,8 @@ create table if not exists invites (
     expires_at text not null,
     used_by integer,                -- Telegram id of the user who came in with it
     used_at text,
-    revoked_at text
+    revoked_at text,
+    grp integer references groups(id) on delete set null  -- the group the user lands in; null: they pick one
 );
 create table if not exists users (
     tg_id integer primary key,
@@ -31,6 +39,7 @@ create table if not exists users (
     paused integer not null default 0,  -- the user blocked the bot
     joined_at text not null,
     invite_id integer references invites(id),
+    grp integer references groups(id) on delete set null,  -- the user's group: they follow its sheets
     rank integer not null default 0 -- 0: a sheet new to the bot waits for the owner's approval; 1: trusted, it does not
 );
 create table if not exists sheets (
@@ -39,13 +48,17 @@ create table if not exists sheets (
     url text not null,
     title text,                     -- the sheet's title, known after the first read
     course text not null default '',  -- the course in front of a work's label, at most 10 characters
-    group_sheet integer not null default 0,  -- every user gets it, now and when they join
     added_by integer not null,      -- Telegram id
     added_at text not null,
     ok_at text,                     -- the last good read
     error text,                     -- why the last read failed: "<kind>: <detail>", see poller.explain
     error_since text,               -- failing since
     told integer not null default 0 -- failing for 12 hours was told to the owner and the followers
+);
+create table if not exists group_sheets (   -- the shared sheets of a group: everyone in it follows them
+    grp integer not null references groups(id) on delete cascade,
+    sheet integer not null references sheets(id) on delete cascade,
+    primary key (grp, sheet)
 );
 create table if not exists sheet_requests (   -- sheets new to the bot that a user asked for, waiting for the owner
     id integer primary key,
@@ -133,7 +146,10 @@ UPGRADES = (
     ("subscriptions", "error", "text"),
     ("subscriptions", "tabs", "integer not null default 0"),
     ("users", "rank", "integer not null default 0", "update users set rank = 1"),  # who was in before ranks is trusted
+    ("users", "grp", "integer references groups(id) on delete set null"),
+    ("invites", "grp", "integer references groups(id) on delete set null"),
 )
+FIRST_GROUP = "group"   # the group the shared sheets of a database from before groups go to, with every user
 
 
 class Store:
@@ -145,6 +161,7 @@ class Store:
             self.db.execute("pragma journal_mode = wal")
         self._upgrade()
         self.db.executescript(SCHEMA)
+        self._to_groups()
 
     def _upgrade(self) -> None:
         """Add the columns an older database lacks, before the schema's indexes may need them."""
@@ -155,6 +172,20 @@ class Store:
                 for sql in fill:
                     self.db.execute(sql)
         self.db.commit()
+
+    def _to_groups(self) -> None:
+        """Before groups there was one set of shared sheets, `sheets.group_sheet`: they become the sheets of one
+        group with every user in it, and the column goes."""
+        if "group_sheet" not in {row["name"] for row in self.db.execute("pragma table_info(sheets)")}:
+            return
+        with self.db:
+            if self.db.execute("select 1 from sheets where group_sheet = 1").fetchone():
+                gid = self.db.execute("insert into groups(name, created_at) values(?, ?)",
+                                      (FIRST_GROUP, clock.utc_iso(clock.now_utc()))).lastrowid
+                self.db.execute("insert into group_sheets(grp, sheet) select ?, id from sheets where group_sheet = 1",
+                                (gid,))
+                self.db.execute("update users set grp = ?", (gid,))
+            self.db.execute("alter table sheets drop column group_sheet")
 
     def close(self) -> None:
         self.db.close()

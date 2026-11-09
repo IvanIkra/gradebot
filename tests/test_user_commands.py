@@ -3,7 +3,7 @@ import pytest
 from gradebot.access import TRUSTED
 
 from .conftest import OWNER, buttons, callback, invite_code, message
-from .test_sheets import ALG, CALC
+from .test_sheets import CALC
 
 PETR = 2001
 
@@ -54,31 +54,6 @@ async def test_sheets_follow_and_unfollow(bot, api, sheets, access, petr):
     await bot.handle(callback(PETR, buttons(listing)["Отписаться: …789abc"]))
     assert sheets.followed(PETR) == []
     assert "Таблиц пока нет" in api.last(PETR)["text"]
-
-
-async def test_group_sheets_for_new_and_old_users(bot, api, sheets, petr, access):
-    await bot.handle(message(OWNER, f"/groupsheet {CALC} Матан"))
-    assert "Общая таблица <b>Матан</b>. Подписано пользователей: 1." in api.last(OWNER)["text"]
-    await bot.handle(message(OWNER, "/groupsheet not-a-link"))
-    assert "не ссылка" in api.last(OWNER)["text"]
-
-    await bot.handle(message(OWNER, "/invite Аня"))
-    await bot.handle(message(2002, f"/start {invite_code(api.last(OWNER)['text'])}", first="Анна"))
-    assert "общие таблицы группы: 1" in api.last(2002)["text"]
-    assert [s["course"] for s in sheets.followed(2002)] == ["Матан"]
-
-    await bot.handle(message(OWNER, f"/course {CALC} Матан-2"))
-    assert "Курс: <b>Матан-2</b>" in api.last(OWNER)["text"]
-    await bot.handle(message(OWNER, f"/course {ALG} Алг"))
-    assert "никто не подписан" in api.last(OWNER)["text"]
-
-    await bot.handle(message(OWNER, "/groupsheet"))
-    listing = api.last(OWNER)
-    assert "Общие таблицы · 1" in listing["text"] and '<td align="right">2</td>' in listing["text"]
-    await bot.handle(callback(OWNER, buttons(listing)["Убрать из общих: Матан-2"]))
-    assert sheets.group() == [] and len(sheets.followed(PETR)) == 1
-    await bot.handle(message(OWNER, "/users"))
-    assert '<td align="right">1</td>' in api.last(OWNER)["text"]
 
 
 async def test_quiet_hours(bot, api, access, petr):

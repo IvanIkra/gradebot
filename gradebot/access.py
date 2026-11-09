@@ -55,25 +55,27 @@ class Access:
 
     # --- invites ------------------------------------------------------------------------------
 
-    def invite(self, note: str = "") -> tuple[int, str]:
-        """A new code: (invite id, the code). The code is shown once and never stored."""
+    def invite(self, note: str = "", group: int | None = None) -> tuple[int, str]:
+        """A new code, landing its user in `group` when given: (invite id, the code). The code is shown once and
+        never stored."""
         now = self.now()
         while True:
             code = new_code()
             try:
                 with self.db:
                     cur = self.db.execute(
-                        "insert into invites(code_hash, note, created_at, expires_at) values(?, ?, ?, ?)",
+                        "insert into invites(code_hash, note, created_at, expires_at, grp) values(?, ?, ?, ?, ?)",
                         (code_hash(code), " ".join(note.split())[:NOTE_LENGTH], clock.utc_iso(now),
-                         clock.utc_iso(now + dt.timedelta(days=self.invite_days))))
+                         clock.utc_iso(now + dt.timedelta(days=self.invite_days)), group))
                 return cur.lastrowid, code
             except sqlite3.IntegrityError:  # the same code twice: try another one
                 continue
 
     def open_invites(self) -> list[dict]:
         """Codes not used, not revoked and not expired, newest first."""
-        rows = self.db.execute("select * from invites where used_by is null and revoked_at is null and expires_at > ? "
-                               "order by id desc", (clock.utc_iso(self.now()),))
+        rows = self.db.execute("select i.*, g.name group_name from invites i left join groups g on g.id = i.grp "
+                               "where used_by is null and revoked_at is null and expires_at > ? order by i.id desc",
+                               (clock.utc_iso(self.now()),))
         return [dict(row) for row in rows]
 
     def revoke(self, invite_id: int) -> bool:
@@ -120,7 +122,8 @@ class Access:
         return dict(row) if row else None
 
     def users(self) -> list[dict]:
-        rows = self.db.execute("select u.*, i.note from users u left join invites i on i.id = u.invite_id "
+        rows = self.db.execute("select u.*, i.note, g.name group_name from users u "
+                               "left join invites i on i.id = u.invite_id left join groups g on g.id = u.grp "
                                "order by u.joined_at")
         return [dict(row) for row in rows]
 

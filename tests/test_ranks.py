@@ -41,8 +41,7 @@ async def test_a_new_sheet_of_a_member_waits_for_approval(bot, api, sheets, acce
 
 
 async def test_a_sheet_the_bot_reads_needs_no_approval(bot, api, sheets, access, petr):
-    sheets.add_group(ALG, OWNER)
-    sheets.unfollow(PETR, sheets.by_url(ALG)["id"])
+    bot.groups.add_sheet(bot.groups.create("A1")["id"], ALG, OWNER)  # a group's sheet: Petr is in no group
     await bot.handle(message(PETR, f"/sheet {ALG}"))
     assert "Подписал на" in api.last(PETR)["text"] and len(sheets.followed(PETR)) == 1
 
