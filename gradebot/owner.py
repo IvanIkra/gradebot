@@ -1,4 +1,4 @@
-"""The owner's commands: invite codes, users, group sheets and courses.
+"""The owner's commands: invite codes, users, group sheets, courses and layouts.
 
 Callbacks: `rv:<invite>` revokes a code, `codes` and `users` redraw the lists, `du:<user>` asks to delete a user
 and `dy:<user>` deletes them, `nr:<user>` resets a user's full name, `gr:<sheet>` makes a group sheet an own one.
@@ -27,6 +27,8 @@ class OwnerCommands:
             await self.cmd_groupsheet(chat, arg, lang)
         elif cmd == "/course":
             await self.cmd_course(chat, arg, lang)
+        elif cmd == "/relayout":
+            await self.cmd_relayout(chat, arg, lang)
         else:
             await self.api.send(chat, self.owner_help(lang))
 
@@ -64,7 +66,9 @@ class OwnerCommands:
                              tr(lang, "the group's sheets: everyone follows them",
                                 "общие таблицы: на них подписаны все")],
                             ["/course " + tr(lang, "<link> <course>", "<ссылка> <курс>"),
-                             tr(lang, "a sheet's course, up to 10 characters", "курс таблицы, до 10 символов")]]))
+                             tr(lang, "a sheet's course, up to 10 characters", "курс таблицы, до 10 символов")],
+                            ["/relayout " + tr(lang, "<link>", "<ссылка>"),
+                             tr(lang, "lay a sheet's tabs out again", "разметить вкладки таблицы заново")]]))
 
     # --- invites ---------------------------------------------------------------------------------
 
@@ -133,6 +137,7 @@ class OwnerCommands:
         if user is None or not user["student"]:
             return tr(lang, "Nothing to reset", "Сбрасывать нечего")
         self.access.set_student(tg_id, None)
+        self.grades.forget(tg_id)
         await self.api.edit(chat, message_id, Doc().p(
             tr(lang, "Full name ", "ФИО "), b(user["student"]), tr(lang, " of ", " у "), self.who(user),
             tr(lang, " is reset.", " сброшено.")))
@@ -158,6 +163,7 @@ class OwnerCommands:
         await self.api.send(chat, Doc().p(
             tr(lang, "Group sheet ", "Общая таблица "), b(sheet_name(sheet)), ". ",
             tr(lang, f"Users who started to follow it: {added}.", f"Подписано пользователей: {added}.")))
+        self.read_soon(None, [sheet["id"]])
 
     def group_view(self, lang: str) -> tuple[Doc, dict | None]:
         sheets = self.sheets.group()
@@ -182,6 +188,23 @@ class OwnerCommands:
             await self.api.send(chat, self.sheet_error(e, lang))
             return
         await self.api.send(chat, Doc().p(tr(lang, "Course: ", "Курс: "), b(sheet["course"] or "—"), "."))
+
+    async def cmd_relayout(self, chat: int, arg: str, lang: str) -> None:
+        try:
+            sheet = self.sheets.by_url(arg.split()[0]) if arg.strip() else None
+        except SheetError as e:
+            await self.api.send(chat, self.sheet_error(e, lang))
+            return
+        if sheet is None:
+            await self.api.send(chat, Doc().p(code(tr(lang, "/relayout <link>", "/relayout <ссылка>")), " — ",
+                                              tr(lang, "a sheet somebody follows.", "таблица, на которую подписаны.")))
+            return
+        if self.poller is not None:
+            self.poller.relayout(sheet)
+        await self.api.send(chat, Doc().p(
+            tr(lang, "The layout of ", "Разметка "), b(sheet_name(sheet)),
+            tr(lang, " is dropped: the sheet is read and laid out again now.",
+               " сброшена: таблица сейчас будет прочитана и размечена заново.")))
 
     @staticmethod
     def sheet_error(error: SheetError, lang: str) -> str:

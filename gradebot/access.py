@@ -127,7 +127,7 @@ class Access:
                             (tg_name, username, tg_id))
 
     def set_student(self, tg_id: int, student: str | None) -> None:
-        """A new name means new rows in the sheets: what was read for the old one goes (later stages)."""
+        """A new name means new rows in the sheets: the caller forgets the grades of the old one."""
         with self.db:
             self.db.execute("update users set student = ? where tg_id = ?", (student, tg_id))
 

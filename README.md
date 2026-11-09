@@ -7,8 +7,8 @@ new and changed grades to a private chat.
 Access is by one-time invite codes from the owner. There is no sign-up and no public web part: the bot only talks
 to the Bot API by long polling.
 
-> Status: early. Invite codes, users, their names, sheets, quiet hours and languages are done. Reading the sheets
-> and sending grades come next.
+> Status: early. Invite codes, users, their names, sheets, quiet hours and languages are done, and the sheets are
+> read: new and changed grades are found and kept for each user. Sending them and `/grades` come next.
 
 ## Commands
 
@@ -27,8 +27,25 @@ to the Bot API by long polling.
 | owner | `/users` | users, with a button to delete each |
 | owner | `/groupsheet [link [course]]` | the group's sheets: every user follows them, new users too |
 | owner | `/course <link> <course>` | a sheet's course, the short name in front of its works (up to 10 characters) |
+| owner | `/relayout <link>` | drop a sheet's cached layout: its tabs are laid out again at once |
 
-A sheet is stored once for everyone who follows it, so it will be downloaded and laid out once.
+A sheet is stored once for everyone who follows it, so it is downloaded and laid out once.
+
+## How grades are read
+
+Every 30 minutes each sheet with at least one follower is downloaded as xlsx and parsed once; every follower's row
+is looked for by their full name (case, "ё" and punctuation don't matter, the name matches the start of a cell). A
+name that matches two rows of one tab is an error: the user makes it longer.
+
+Claude Haiku lays out each tab once for all followers: which top rows are the header, which columns are graded works,
+their maximum points, a bonus column and a short label. The layout is cached while the header rows keep their text.
+Grades are put on a 0–10 scale. The first read of a sheet for a user is a snapshot; after it, a new or changed grade
+is news. A zero before any real grade is a placeholder, a grade that leaves the sheet and comes back unchanged is no
+news, and a column shifted by an insertion is the same work.
+
+A new sheet or a new full name is read at once, and the user is told what was found. A sheet that cannot be read
+for 12 hours is told to the owner and its followers once, and once more when it reads again. Haiku spending has a
+monthly limit (`LLM_MONTHLY_USD`): beyond it new tabs wait for the next month, cached layouts keep working.
 
 ## Messages
 
@@ -40,7 +57,7 @@ server has no rich messages, the bot falls back to classic HTML messages with th
 You need [uv](https://docs.astral.sh/uv/) and a bot token from [@BotFather](https://t.me/BotFather).
 
 ```sh
-cp .env.example .env    # fill in BOT_TOKEN and OWNER_ID
+cp .env.example .env    # fill in BOT_TOKEN, OWNER_ID and ANTHROPIC_API_KEY
 uv sync
 .venv/bin/python -m gradebot --data data
 ```
@@ -57,6 +74,10 @@ The SQLite database lives in `data/`.
 
 The bot keeps each user's Telegram id and name, language, the full name they set, their sheets and grades. `/stop`
 erases all of it; the owner can erase a user too. Invite codes are stored as hashes only.
+
+To lay out a tab, Claude Haiku sees the tab's top rows (other students' rows may be among them) and one follower's
+row without their name. Sheets are open to anyone with the link anyway; who may use the bot is up to the owner,
+who also sees every full name users set.
 
 ## Development
 

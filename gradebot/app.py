@@ -1,4 +1,4 @@
-"""The service: the database, the Bot API client and the long-polling loop."""
+"""The service: the database, the Bot API client, the long-polling loop and the reading of the sheets."""
 
 import asyncio
 import logging
@@ -9,6 +9,11 @@ import aiohttp
 from .access import Access
 from .bot import Bot
 from .config import Env
+from .layout import Layouts
+from .llm.budget import Budget
+from .llm.client import Haiku
+from .llm.journal import Journal
+from .poller import Poller
 from .sheets import Sheets
 from .store import Store
 from .telegram import BotApi, TelegramError
@@ -25,9 +30,11 @@ USER_COMMANDS = {
 }
 OWNER_COMMANDS = {
     "en": [("invite", "a one-time invite code"), ("codes", "unused codes"), ("users", "users"),
-           ("groupsheet", "the group's sheets"), ("course", "a sheet's course"), ("help", "commands")],
+           ("groupsheet", "the group's sheets"), ("course", "a sheet's course"),
+           ("relayout", "lay a sheet out again"), ("help", "commands")],
     "ru": [("invite", "одноразовый код приглашения"), ("codes", "неиспользованные коды"), ("users", "пользователи"),
-           ("groupsheet", "общие таблицы"), ("course", "курс таблицы"), ("help", "команды")],
+           ("groupsheet", "общие таблицы"), ("course", "курс таблицы"), ("relayout", "разметить таблицу заново"),
+           ("help", "команды")],
 }
 
 
@@ -38,6 +45,9 @@ class Service:
         self.store = Store(data / "gradebot.db")
         self.access = Access(self.store, env.invite_days)
         self.sheets = Sheets(self.store)
+        journal = Journal(self.store)
+        self.budget = Budget(journal, self.store, env.llm_monthly_usd, env.zone)
+        self.layouts = Layouts(self.store, Haiku(self.budget, journal))
 
     async def run(self) -> None:
         async with BotApi(self.env.bot_token, self.env.api_url) as api:
@@ -45,8 +55,10 @@ class Service:
             log.info("running as @%s", me.get("username"))
             bot = Bot(api, self.store, self.access, self.sheets, self.env.owner_id, self.env.zone,
                       me.get("username") or "")
+            poller = Poller(self.sheets, bot.grades, self.layouts)
+            bot.poller, poller.on_read, self.budget.notify = poller, bot.after_read, bot.budget_notice
             await self.set_commands(api)
-            await poll(api, bot, self.store)
+            await asyncio.gather(poll(api, bot, self.store), poller.run())
 
     async def set_commands(self, api: BotApi) -> None:
         for lang in ("en", "ru"):

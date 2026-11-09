@@ -114,3 +114,38 @@ def sheets(store, clock) -> Sheets:
 @pytest.fixture
 def bot(api, store, access, sheets, clock) -> Bot:
     return Bot(api, store, access, sheets, OWNER, ZONE, username="gradebot_test_bot", now=clock)
+
+
+# --- grades ----------------------------------------------------------------------------------------
+
+
+@pytest.fixture
+def llm():
+    from .books import FakeLLM
+
+    return FakeLLM()
+
+
+@pytest.fixture
+def layouts(store, llm):
+    from gradebot.layout import Layouts
+
+    return Layouts(store, llm)
+
+
+@pytest.fixture
+def grades(store, clock):
+    from gradebot.grades import Grades
+
+    return Grades(store, now=clock)
+
+
+def add_user(access, tg_id: int, student: str | None, lang: str = "ru", name: str = "Тест") -> dict:
+    """A user who came in with a fresh code and set a full name."""
+    from gradebot.access import NewUser
+
+    _, code = access.invite()
+    access.redeem(code, NewUser(tg_id, name, None, lang))
+    if student:
+        access.set_student(tg_id, student)
+    return access.user(tg_id)

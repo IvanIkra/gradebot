@@ -15,7 +15,9 @@ from .store import Store
 
 GOOGLE_SHEET = re.compile(r"^https://docs\.google\.com/spreadsheets/(?:u/\d+/)?d/([A-Za-z0-9_-]{20,80})")
 COURSE_CHARS = 10       # the course in front of a work's label: "Calc HW 3" (23 characters for both)
+COURSE_FROM_TITLE = 8   # characters of the sheet's title that make its course when the owner set none
 SHEETS_PER_USER = 20
+STALE_AFTER = dt.timedelta(hours=12)
 
 
 class SheetError(ValueError):
@@ -35,6 +37,11 @@ def course(text: str) -> str:
     if len(value) > COURSE_CHARS:
         raise SheetError(f"a course has at most {COURSE_CHARS} characters")
     return value
+
+
+def course_of(sheet: dict) -> str:
+    """The course in front of the sheet's works: the owner's, else the start of the title."""
+    return sheet["course"] or (sheet["title"] or sheet["sheet_id"])[:COURSE_FROM_TITLE].strip()
 
 
 def name(sheet: dict) -> str:
@@ -98,6 +105,53 @@ class Sheets:
 
     def followers(self, sheet: int) -> list[int]:
         return [row["tg_id"] for row in self.db.execute("select tg_id from subscriptions where sheet = ?", (sheet,))]
+
+    # --- reading --------------------------------------------------------------------------------
+
+    def readers(self, sheet: int) -> list[dict]:
+        """The followers whose rows are looked for: those with a full name who have not blocked the bot."""
+        rows = self.db.execute("select u.* from users u join subscriptions s on s.tg_id = u.tg_id "
+                               "where s.sheet = ? and u.student is not null and not u.paused order by u.tg_id",
+                               (sheet,))
+        return [dict(row) for row in rows]
+
+    def to_read(self) -> list[dict]:
+        """Sheets with at least one reader: the others are not downloaded."""
+        rows = self.db.execute("select * from sheets s where exists (select 1 from subscriptions u join users r "
+                               "on r.tg_id = u.tg_id where u.sheet = s.id and r.student is not null and not r.paused) "
+                               "order by id")
+        return [dict(row) for row in rows]
+
+    def reader(self, tg_id: int, sheet: int) -> str | None:
+        """The full name a user's rows in a sheet are looked for by now; None when they no longer follow it."""
+        row = self.db.execute("select u.student from users u join subscriptions s on s.tg_id = u.tg_id "
+                              "where u.tg_id = ? and s.sheet = ?", (tg_id, sheet)).fetchone()
+        return row["student"] if row else None
+
+    def set_title(self, sheet: int, title: str) -> None:
+        with self.db:
+            self.db.execute("update sheets set title = ? where id = ?", (title, sheet))
+
+    def read_ok(self, sheet: int) -> bool:
+        """A good read; True when the sheet had been told as failing and is back."""
+        row = self.db.execute("select told from sheets where id = ?", (sheet,)).fetchone()
+        with self.db:
+            self.db.execute("update sheets set ok_at = ?, error = null, error_since = null, told = 0 where id = ?",
+                            (clock.utc_iso(self.now()), sheet))
+        return bool(row and row["told"])
+
+    def read_failed(self, sheet: int, error: str) -> str | None:
+        """A failed read. The moment it has been failing since, when that makes STALE_AFTER just now: told once."""
+        row = self.db.execute("select error_since, told from sheets where id = ?", (sheet,)).fetchone()
+        if row is None:
+            return None
+        now = self.now()
+        since = row["error_since"] or clock.utc_iso(now)
+        stale = not row["told"] and now - clock.parse(since) >= STALE_AFTER
+        with self.db:
+            self.db.execute("update sheets set error = ?, error_since = ?, told = ? where id = ?",
+                            (error, since, int(row["told"] or stale), sheet))
+        return since if stale else None
 
     # --- the owner's -----------------------------------------------------------------------------
 

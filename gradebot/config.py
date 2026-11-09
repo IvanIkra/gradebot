@@ -29,6 +29,7 @@ class Env:
     invite_days: int = 7            # how long an invite code works
     tz: str = "Europe/Moscow"       # quiet hours and the dates the bot shows
     api_url: str = "https://api.telegram.org"  # a local Bot API server may stand in
+    llm_monthly_usd: float = 1.0    # Haiku lays out the tabs within this much a month
 
     @property
     def zone(self) -> ZoneInfo:
@@ -57,6 +58,13 @@ class Env:
             except (ZoneInfoNotFoundError, ValueError):
                 raise ConfigError(f"TZ is not a time zone: {tz!r}") from None
             values["tz"] = tz
+        if raw := get("LLM_MONTHLY_USD"):
+            try:
+                values["llm_monthly_usd"] = float(raw)
+            except ValueError:
+                raise ConfigError(f"LLM_MONTHLY_USD must be a number, got {raw!r}") from None
+            if not 0 <= values["llm_monthly_usd"] <= 100:
+                raise ConfigError("LLM_MONTHLY_USD must be from 0 to 100")
         if api_url := get("BOT_API_URL"):
             if not api_url.startswith(("https://", "http://")):
                 raise ConfigError("BOT_API_URL must be an http(s):// address")

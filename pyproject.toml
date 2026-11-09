@@ -18,6 +18,8 @@ classifiers = [
 ]
 dependencies = [
     "aiohttp>=3.10",
+    "anthropic>=1.15",
+    "openpyxl>=3.1",
     "tzdata>=2026.6",
 ]
 

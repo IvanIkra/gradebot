@@ -89,8 +89,13 @@ class UserCommands:
             await self.api.send(chat, tr(lang, "That's your name already.", "Это ФИО уже записано."))
             return
         self.access.set_student(user["tg_id"], student)
+        self.grades.forget(user["tg_id"])  # other rows now: the next read is a baseline
+        followed = self.sheets.followed(user["tg_id"])
         doc = Doc().p(tr(lang, "Saved: ", "Записал: "), b(student), ".")
-        if not self.sheets.followed(user["tg_id"]):
+        if followed:
+            doc.p(tr(lang, "Reading your sheets now; I'll write what I find.",
+                     "Сейчас прочитаю твои таблицы и напишу, что нашёл."))
+        else:
             doc.p(tr(lang, "Now a sheet to follow: ", "Теперь таблица: "),
                   code(tr(lang, "/sheet <link>", "/sheet <ссылка>")))
         await self.api.send(chat, doc)
@@ -99,6 +104,7 @@ class UserCommands:
         await self.tell_owner(
             Doc().p(self.who(user), tr(owner, " set the full name ", " указал ФИО "), b(student), *before),
             keyboard([[(tr(owner, "Reset", "Сбросить"), f"nr:{user['tg_id']}")]]))
+        self.read_soon(user["tg_id"], [sheet["id"] for sheet in followed])
 
     # --- sheets ----------------------------------------------------------------------------------
 
@@ -126,7 +132,11 @@ class UserCommands:
         if not user["student"]:
             doc.p(tr(lang, "To find your row I need your full name: ", "Чтобы найти твою строку, нужно ФИО: "),
                   code(tr(lang, "/name Surname Name", "/name Фамилия Имя")))
+        else:
+            doc.p(tr(lang, "Reading it now; I'll write what I find.", "Сейчас прочитаю её и напишу, что нашёл."))
         await self.api.send(chat, doc)
+        if user["student"]:
+            self.read_soon(user["tg_id"], [sheet["id"]])
 
     async def cmd_sheets(self, chat: int, user: dict, arg: str) -> None:
         await self.api.send(chat, *self.sheets_view(user))

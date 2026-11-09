@@ -4,14 +4,18 @@ Three kinds of senders: the owner (`owner.py`), users who came in with a code (`
 a code lets in (here). Callback data is short and typed, `kind:arg`; each module lists its own kinds.
 """
 
+import asyncio
 import datetime as dt
 import logging
 from collections.abc import Callable
 
 from . import clock
 from .access import Access, NewUser, normalise
+from .grades import Grades
 from .i18n import guess, tr
+from .notices import ReadNotices
 from .owner import OwnerCommands
+from .poller import Poller
 from .rich import Doc, Html, code, join, keyboard
 from .sheets import Sheets
 from .store import Store
@@ -36,11 +40,14 @@ def full_name(user: dict) -> str:
     return " ".join(filter(None, (user.get("first_name"), user.get("last_name")))) or str(user["id"])
 
 
-class Bot(OwnerCommands, UserCommands):
+class Bot(OwnerCommands, UserCommands, ReadNotices):
     def __init__(self, api: BotApi, store: Store, access: Access, sheets: Sheets, owner_id: int, zone: dt.tzinfo,
                  username: str = "", now: Callable[[], dt.datetime] = clock.now_utc):
         self.api, self.store, self.access, self.sheets = api, store, access, sheets
         self.owner_id, self.zone, self.username, self.now = owner_id, zone, username, now
+        self.grades = Grades(store, now)
+        self.poller: Poller | None = None   # set by the service; without it nothing is read
+        self._tasks: set[asyncio.Task] = set()
 
     @property
     def owner_lang(self) -> str:
@@ -59,6 +66,12 @@ class Bot(OwnerCommands, UserCommands):
             await self.api.send(self.owner_id, doc, buttons)
         except TelegramError as e:
             log.warning("telling the owner failed: %s", e)
+
+    def read_soon(self, tg_id: int | None, sheets: list[int]) -> None:
+        """Read these sheets now; `tg_id` is told how it went."""
+        if self.poller is not None:
+            for sheet in sheets:
+                self.poller.request(sheet, tg_id)
 
     async def tell(self, user: dict, text: str | Doc) -> None:
         """A user, unasked; one who blocked the bot is paused."""
