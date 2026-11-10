@@ -50,10 +50,8 @@ async def test_sheets_follow_and_unfollow(bot, api, sheets, access, petr):
     await bot.handle(message(PETR, "/sheet https://example.com/x"))
     assert "не ссылка на таблицу Google" in api.last(PETR)["text"]
     await bot.handle(message(PETR, CALC))                       # the answer to the link asked again
-    assert "Как коротко назвать таблицу?" in api.last(PETR)["text"]
-    await press(bot, PETR)                                      # «Title from Google»
     reply = api.last(PETR)["text"]
-    assert "Подписал на <b>…789abc</b>" in reply and "нужно ФИО" in reply
+    assert "Подписал на таблицу." in reply and "нужно ФИО" in reply
     await bot.handle(message(PETR, f"/sheet {CALC}"))
     assert "уже в твоих подписках" in api.last(PETR)["text"]
 
@@ -97,39 +95,29 @@ async def test_language(bot, api, access, petr):
 async def test_stop_drops_own_sheets(bot, api, sheets, access, petr):
     access.set_rank(PETR, TRUSTED)
     await bot.handle(message(PETR, f"/sheet {CALC}"))
-    await press(bot, PETR)
     sheet_id = sheets.followed(PETR)[0]["id"]
     await bot.handle(callback(PETR, "stop!"))
     assert sheets.get(sheet_id) is None
 
 
-async def test_a_course_for_a_sheet_new_to_the_bot(bot, api, sheets, access, petr):
+async def test_only_the_owner_names_a_sheet(bot, api, sheets, access, petr):
     await bot.handle(message(PETR, "/help"))
-    assert "/sheet &lt;ссылка&gt; [имя]" in api.last(PETR)["text"] and "просто прислать ссылку" in \
+    assert "/sheet &lt;ссылка&gt;</td>" in api.last(PETR)["text"] and "просто прислать ссылку" in \
         api.last(PETR)["text"]
     await bot.handle(message(PETR, "/sheet"))
     assert "Пришли ссылку на таблицу" in api.last(PETR)["text"]
-    await bot.handle(message(PETR, CALC))
-    assert "Как коротко назвать таблицу?" in api.last(PETR)["text"] and "Как в Google" in buttons(api.last(PETR))
     await bot.handle(callback(PETR, "ac", bot.asks[PETR].message_id))
     assert "Отменено" in api.last(PETR)["text"] and PETR not in bot.asks
-    access.set_rank(PETR, TRUSTED)
-    await bot.handle(message(PETR, f"/sheet {CALC} Слишком длинный"))
-    assert "В коротком имени не больше 10 символов" in api.last(PETR)["text"] and sheets.by_url(CALC) is None
-    await bot.handle(message(PETR, f"/sheet {CALC} Матан"))
-    assert "Подписал на <b>Матан</b>" in api.last(PETR)["text"] and sheets.by_url(CALC)["course"] == "Матан"
 
-    await bot.handle(message(OWNER, "/invite Аня"))
-    await bot.handle(message(2002, f"/start {invite_code(api.last(OWNER)['text'])}", first="Анна"))
-    await bot.handle(message(2002, f"/sheet {CALC} Анализ"))  # the bot reads it already: the course stays
-    assert "имя остаётся прежним: <b>Матан</b>" in api.last(2002)["text"]
-    assert sheets.by_url(CALC)["course"] == "Матан"
-
-    await bot.handle(message(2002, f"/sheet {ALG} Алгебра"))   # a member: the course waits with the request
+    await bot.handle(message(PETR, f"/sheet {ALG} Алгебра"))   # words after the link are no name
     request = api.last(OWNER)
-    assert ", имя <b>Алгебра</b>" in request["text"]
+    assert "Алгебра" not in request["text"]
     await bot.handle(callback(OWNER, buttons(request)["Одобрить"]))
-    assert sheets.by_url(ALG)["course"] == "Алгебра"
+    approved = api.last(OWNER)
+    assert not sheets.by_url(ALG)["course"] and "Одобрено" in approved["text"]
+    await bot.handle(callback(OWNER, buttons(approved)["Задать имя"]))
+    await bot.handle(message(OWNER, "Алгебра"))
+    assert sheets.by_url(ALG)["course"] == "Алгебра" and "Имя: <b>Алгебра</b>" in api.last(OWNER)["text"]
 
     await bot.handle(message(OWNER, f"/rename {ALG} Алг"))
     assert "Имя: <b>Алг</b>" in api.last(OWNER)["text"]
@@ -144,7 +132,6 @@ async def test_a_link_pasted_alone_follows_the_sheet(bot, api, sheets, access, p
     access.set_rank(PETR, TRUSTED)
     assert bot.asks[PETR].step == "student"             # the full name is asked after coming in
     await bot.handle(message(PETR, CALC))               # a link instead: it is followed, not taken for a name
-    await press(bot, PETR)  # no short name
     assert [s["url"] for s in sheets.followed(PETR)] == [sheets.by_url(CALC)["url"]]
     assert access.user(PETR)["student"] is None
 

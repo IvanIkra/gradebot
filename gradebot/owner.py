@@ -7,7 +7,8 @@ Callbacks: `rq:<invite>` asks to revoke a code and `rv:<invite>` revokes it, `co
 `ug:<user>` offers the groups to move a user to and `um:<user>.<group>` moves them (group 0: none),
 `nr:<user>` resets a user's full name, `sa:<request>` and `sd:<request>` approve and decline a user's sheet,
 `groups` redraws the groups, `gs:<group>` shows a group's sheets, `gr:<group>.<sheet>` takes a sheet from a group,
-`gd:<group>` asks to delete a group and `gx:<group>` deletes it, `rl:<sheet>` lays a sheet out again, `st` redraws
+`gd:<group>` asks to delete a group and `gx:<group>` deletes it, `rn:<sheet>` asks for a sheet's short name,
+`rl:<sheet>` lays a sheet out again, `st` redraws
 /status, `iv:<minutes>` sets how often the sheets are read, `fa:<user>` answers a user's /feedback.
 """
 
@@ -150,6 +151,8 @@ class OwnerCommands:
             done = self.groups.delete(number)
             await self.show(chat, message_id, self.groups_view(lang))
             return tr(lang, "Deleted", "Удалена") if done else None
+        elif kind == "rn" and number and (sheet := self.sheets.get(number)) is not None:
+            await self.cmd_rename(chat, sheet["url"], lang)
         elif kind == "rl" and number:
             sheet = self.sheets.get(number)
             if sheet is None or self.poller is None:
@@ -570,8 +573,9 @@ class OwnerCommands:
         request, sheet = done
         user = self.access.user(request["tg_id"])
         await self.show(chat, message_id, Doc().p(
-            tr(lang, "Approved: ", "Одобрено: "), link(request["url"], request["url"]), tr(lang, " for ", " для "),
-            self.who(user), "."))
+            tr(lang, "Approved: ", "Одобрено: "), link(sheet_name(sheet), request["url"]), tr(lang, " for ", " для "),
+            self.who(user), ". ", self.no_course(lang)).buttons(
+            (tr(lang, "Set a short name", "Задать имя"), f"rn:{sheet['id']}")))
         ulang = user["lang"]
         await self.tell(user, Doc().p(tr(ulang, "The owner approved the sheet. ", "Владелец одобрил таблицу. "))
                         .extend(self.following(user, sheet)))

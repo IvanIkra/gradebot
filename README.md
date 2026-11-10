@@ -17,7 +17,7 @@ and no public web part: the bot only talks to the Bot API by long polling.
 | anyone | `/start <code>` | come in with an invite code (the `t.me/<bot>?start=<code>` link does the same) |
 | user | `/grades` | your grades by sheet, the new ones of the last week marked; "Report a mistake" tells the owner of a bad layout |
 | user | `/name Surname Name` | your full name exactly as the sheets have it; the owner sees it and may reset it |
-| user | `/sheet <link> [short name]` | follow a Google Sheet (open to anyone with the link); a link sent alone does the same; a member's sheet the bot does not read yet waits for the owner's approval. The short name is also the sheet's hashtag and is kept only for a sheet new to the bot; without it the bot names the sheet by its title in Google |
+| user | `/sheet <link>` | follow a Google Sheet (open to anyone with the link); a link sent alone does the same; a member's sheet the bot does not read yet waits for the owner's approval. The sheet is named by its title in Google until the owner gives it a short name |
 | user | `/sheets` | your sheets: when each was read, how many grades, what is wrong; check now or unfollow |
 | user | `/group` | your group, with buttons to move to another one: you follow the shared sheets of your group. A group that came with the invite code is changed by the owner only |
 | user | `/quiet [23-8\|off]` | quiet hours: messages then come without a sound; 23:00–8:00 by default |
@@ -30,7 +30,7 @@ and no public web part: the bot only talks to the Bot API by long polling.
 | owner | `/users [text]` | users, ten a page, newest first; with text, those whose name, @username, full name, code note or group has it. A user's card trusts them (their new sheets need no approval), moves them to another group, prolongs their access, resets their full name or deletes them |
 | owner | `/groups [name [new name]]` | groups: make one, rename one; buttons show a group's sheets or delete it |
 | owner | `/groupsheet [group] [link [short name]]` | a group's shared sheets: everyone in the group follows them, newcomers too |
-| owner | `/rename <link> [short name]` | a sheet's short name and hashtag (up to 10 characters) for everyone who follows it; without one, its title in Google |
+| owner | `/rename <link> [short name]` | a sheet's short name and hashtag (up to 10 characters) for everyone who follows it; without one, its title in Google. Only the owner names sheets: a sheet new to the bot comes with a "Set a short name" button |
 | owner | `/relayout <link>` | drop a sheet's cached layout: its tabs are laid out again at once |
 | owner | `/status` | sheets and their errors, users, Haiku spending today and this month |
 | owner | `/interval [minutes]` | how often the sheets are read: 30 minutes by default, 5 to 240 |

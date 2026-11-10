@@ -18,8 +18,8 @@ from .i18n import LANGUAGES, tr
 from .layout import label
 from .notices import explain
 from .profile import ProfileError
-from .rich import Doc, Html, b, code, i, join, link
-from .sheets import GOOGLE_SHEET, SheetError, course
+from .rich import Doc, b, code, i, link
+from .sheets import GOOGLE_SHEET, SheetError
 from .sheets import name as sheet_name
 
 COMPLAINTS_EVERY = dt.timedelta(days=1)     # one complaint about a sheet's layout a day from a user
@@ -111,7 +111,7 @@ class UserCommands:
         rows = [["/grades", tr(lang, "your grades, the new ones marked", "твои оценки, новые отмечены")],
                 ["/name " + tr(lang, "Surname Name", "Фамилия Имя"),
                  tr(lang, "your full name as the sheets have it", "ФИО, как в таблицах")],
-                ["/sheet " + tr(lang, "<link> [short name]", "<ссылка> [имя]"),
+                ["/sheet " + tr(lang, "<link>", "<ссылка>"),
                  tr(lang, "follow a Google Sheet; a link sent alone does the same",
                     "подписаться на таблицу Google; можно просто прислать ссылку")],
                 ["/sheets", tr(lang, "your sheets: check, unfollow", "твои таблицы: проверить, отписаться")],
@@ -178,57 +178,41 @@ class UserCommands:
     # --- sheets ----------------------------------------------------------------------------------
 
     async def cmd_sheet(self, chat: int, user: dict, arg: str) -> None:
-        """`/sheet <link> [short name]`, the missing ones asked for. The short name (the sheet's `course`) is also
-        its hashtag, and counts for a sheet new to the bot only: without one the bot names the sheet by its title in
-        Google, and later only the owner changes it."""
+        """`/sheet <link>`, or the link asked for. A sheet is named by its title in Google; its short name and
+        hashtag are the owner's to set (/rename)."""
         lang = user["lang"]
-        url, _, name = arg.strip().partition(" ")
-        data = {"link": url, **({"name": name.strip()} if name.strip() else {})} if url else {}
-        steps = [link_step(lang),
-                 Step("name", lambda data: Doc().p(self.course_hint(lang)), check=lambda value, data: course(value),
-                      error=lambda lang, e: self.follow_error(e, lang),
-                      skip=lambda data: tr(lang, "As in Google", "Как в Google"),
-                      when=lambda data: self.sheets.by_url(data["link"]) is None and not any(
-                          r["url"] == data["link"] for r in self.sheets.requests(user["tg_id"])))]
-        await self.flow(chat, lang, steps, lambda data: self.add_sheet(chat, user["tg_id"], data), data)
+        url = arg.split()[0] if arg.strip() else ""
+        await self.flow(chat, lang, [link_step(lang)], lambda data: self.add_sheet(chat, user["tg_id"], data),
+                        {"link": url} if url else None)
 
     async def add_sheet(self, chat: int, tg_id: int, data: dict) -> None:
         user = self.access.user(tg_id)
         if user is None:
             return
-        lang, url, course_text = user["lang"], data["link"], data.get("name") or None
+        lang, url = user["lang"], data["link"]
         try:
             known = self.sheets.by_url(url)
             if known is None and user["rank"] < TRUSTED:
-                await self.ask_owner(chat, user, url, course_text)
+                await self.ask_owner(chat, user, url)
                 return
-            sheet, new = self.sheets.follow(user["tg_id"], url, course_text if known is None else None)
+            sheet, new = self.sheets.follow(user["tg_id"], url)
         except SheetError as e:
             await self.api.send(chat, self.follow_error(e, lang))
             return
         if not new:
             await self.api.send(chat, tr(lang, "You follow this sheet already.", "Эта таблица уже в твоих подписках."))
             return
-        doc = self.following(user, sheet)
-        if known is not None and course_text:
-            doc.p(tr(lang, "The bot reads this sheet already, so its name stays: ",
-                     "Бот уже читает эту таблицу, поэтому её имя остаётся прежним: "), b(sheet_name(sheet)), ". ",
-                  tr(lang, "Only the owner changes it.", "Поменять его может только владелец."))
-        await self.api.send(chat, doc)
+        await self.api.send(chat, self.following(user, sheet))
+        if known is None:  # a trusted user's sheet new to the bot: its name is the owner's to set
+            owner = self.owner_lang
+            await self.news(self.who(user), tr(owner, " follows a sheet new to the bot: ", ": новая таблица "),
+                            link(sheet_name(sheet), sheet["url"]),
+                            buttons=((tr(owner, "Set a short name", "Задать имя"), f"rn:{sheet['id']}"),))
         if user["student"]:
             self.read_soon(user["tg_id"], [sheet["id"]])
 
     @staticmethod
-    def course_hint(lang: str) -> Html:
-        return join(b(tr(lang, "A short name for the sheet?", "Как коротко назвать таблицу?")), " ",
-                    tr(lang, "Up to 10 characters, like ", "До 10 символов, например "),
-                    code(tr(lang, "Calc", "Матан")), tr(lang, ": it becomes the hashtag in messages with grades.",
-                                                        ": это будет хэштег в сообщениях с оценками."))
-
-    @staticmethod
     def follow_error(error: SheetError, lang: str) -> str:
-        if "course" in str(error):
-            return tr(lang, "A short name has at most 10 characters.", "В коротком имени не больше 10 символов.")
         if "at most" in str(error):
             return tr(lang, "You follow 20 sheets already: unfollow one in /sheets.",
                       "У тебя уже 20 таблиц: отпишись от какой-нибудь в /sheets.")
@@ -239,7 +223,8 @@ class UserCommands:
     def following(user: dict, sheet: dict) -> Doc:
         """The answer to a sheet the user started to follow."""
         lang = user["lang"]
-        doc = Doc().p(tr(lang, "Following ", "Подписал на "), b(sheet_name(sheet)), ". ",
+        title = sheet["course"] or sheet["title"]  # a sheet new to the bot has neither until it is read
+        doc = Doc().p(tr(lang, "Following the sheet", "Подписал на таблицу"), *([" ", b(title)] if title else []), ". ",
                       tr(lang, "The sheet must be open to anyone with the link.",
                          "Таблица должна быть открыта всем, у кого есть ссылка."))
         if not user["student"]:
@@ -247,10 +232,10 @@ class UserCommands:
                          code(tr(lang, "/name Surname Name", "/name Фамилия Имя")))
         return doc.p(tr(lang, "Reading it now; I'll write what I find.", "Сейчас прочитаю её и напишу, что нашёл."))
 
-    async def ask_owner(self, chat: int, user: dict, url: str, course_text: str | None = None) -> None:
+    async def ask_owner(self, chat: int, user: dict, url: str) -> None:
         """A member's sheet the bot does not read yet: the owner approves it first. SheetError as follow."""
         lang = user["lang"]
-        request, new = self.sheets.ask(user["tg_id"], url, course_text)
+        request, new = self.sheets.ask(user["tg_id"], url)
         if not new:
             await self.api.send(chat, tr(lang, "This sheet is already waiting for the owner's approval.",
                                          "Эта таблица уже ждёт одобрения владельца."))

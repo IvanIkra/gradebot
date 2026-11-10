@@ -5,7 +5,7 @@ import pytest
 from gradebot.access import MEMBER, TRUSTED
 from gradebot.sheets import SHEETS_PER_USER, SheetError
 
-from .conftest import OWNER, add_user, buttons, callback, invite_code, message, press
+from .conftest import OWNER, add_user, buttons, callback, invite_code, message
 from .test_sheets import ALG, CALC
 
 PETR, ANNA = 2001, 2002
@@ -22,7 +22,6 @@ async def petr(bot, api, access):
 async def test_a_new_sheet_of_a_member_waits_for_approval(bot, api, sheets, access, petr):
     assert petr["rank"] == MEMBER
     await bot.handle(message(PETR, f"/sheet {CALC}"))
-    await press(bot, PETR)
     assert "сначала её одобрит владелец" in api.last(PETR)["text"]
     assert sheets.followed(PETR) == [] and sheets.by_url(CALC) is None
     request = api.last(OWNER)
@@ -55,7 +54,6 @@ async def test_decline_and_cancel(bot, api, sheets, petr):
     assert sheets.requests() == [] and sheets.by_url(CALC) is None
 
     await bot.handle(message(PETR, f"/sheet {ALG}"))
-    await press(bot, PETR)
     await bot.handle(message(PETR, "/sheets"))
     await bot.handle(callback(PETR, buttons(api.last(PETR))["Отменить заявку 1"]))
     assert sheets.requests() == [] and "Таблиц пока нет" in api.last(PETR)["text"]
@@ -68,10 +66,12 @@ async def test_the_owner_trusts_a_user_in_users(bot, api, sheets, access, petr):
     assert "обычный" in card["text"]
     await bot.handle(callback(OWNER, buttons(card)["Доверять"]))
     assert access.user(PETR)["rank"] == TRUSTED and "доверенный" in api.last(OWNER)["text"]
+    card = api.last(OWNER)
     await bot.handle(message(PETR, f"/sheet {CALC}"))
-    await press(bot, PETR)
-    assert "Подписал на" in api.last(PETR)["text"] and sheets.requests() == []
-    await bot.handle(callback(OWNER, buttons(api.last(OWNER))["Сделать обычным"]))
+    assert "Подписал на таблицу" in api.last(PETR)["text"] and sheets.requests() == []
+    news = api.last(OWNER)                                      # a sheet new to the bot: the owner names it
+    assert "новая таблица" in news["text"] and buttons(news)["Задать имя"] == f"rn:{sheets.by_url(CALC)['id']}"
+    await bot.handle(callback(OWNER, buttons(card)["Сделать обычным"]))
     assert access.user(PETR)["rank"] == MEMBER
 
 
