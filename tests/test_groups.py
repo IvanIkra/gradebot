@@ -98,11 +98,12 @@ async def test_a_code_without_a_group_asks_for_one(bot, api, access, sheets):
     await bot.handle(message(OWNER, "/invite Петя"))
     assert "в группу" not in api.last(OWNER)["text"]
     await bot.handle(message(PETR, f"/start {invite_code(api.last(OWNER)['text'])}"))
-    welcome = api.sent(PETR)[-2]
-    assert "В какой ты группе?" in welcome["text"]
+    welcome = api.last(PETR)                                    # one message: the name waits for the group
+    assert "В какой ты группе?" in welcome["text"] and PETR not in bot.asks
     assert buttons(welcome) == {"A1": f"gj:{a1}", "B2": f"gj:{b2}", "Без группы": "gj:0"}
     await bot.handle(callback(PETR, f"gj:{b2}"))
-    edited = api.last(PETR)
+    edited, asked = api.sent(PETR)[-2:]                         # the welcome redrawn, then the full name asked
+    assert "Как ты записан в таблицах?" in asked["text"]
     assert edited["method"] == "editMessageText" and "Твоя группа: <b>B2</b>" in edited["text"]
     assert bot.asks[PETR].step == "student" and access.user(PETR)["grp"] == b2   # the name is still asked
     assert "Пётр (@petr_example): теперь в группе <b>B2</b>" in api.last(OWNER)["text"]

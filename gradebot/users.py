@@ -286,6 +286,8 @@ class UserCommands:
         group = self.groups.get(user["grp"])
         if first:
             await self.api.edit(chat, message_id, self.welcome(lang, group, len(followed), user["expires_at"]))
+            if not user["student"] and self.waiting(chat) is None:
+                await self.cmd_name(chat, user, "")  # the next step of coming in
         else:
             doc = self.group_choice(user)
             if left or followed:

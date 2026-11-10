@@ -277,7 +277,8 @@ class Bot(OwnerCommands, UserCommands, ReadNotices, OwnerNews, Dialogs):
                     self.groups.fix(tg_id)
                 user = self.access.user(tg_id)
                 await self.api.send(chat, self.welcome(lang, group, len(followed), user["expires_at"]))
-                await self.cmd_name(chat, user, "")  # the full name next: without it no row is found
+                if group or not self.groups.all():  # else the full name is asked once the group is picked
+                    await self.cmd_name(chat, user, "")
                 note = f" «{invite['note']}»" if invite["note"] else ""
                 owner = self.owner_lang
                 count = f" ({invite['used']}/{invite['uses'] or '∞'})" if invite["uses"] != 1 else ""
