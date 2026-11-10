@@ -14,6 +14,7 @@ Callbacks: `rq:<invite>` asks to revoke a code and `rv:<invite>` revokes it, `co
 import datetime as dt
 import logging
 import re
+from urllib.parse import quote
 
 from . import clock, poller
 from .access import MEMBER, TRUSTED
@@ -277,13 +278,17 @@ class OwnerCommands:
                       self.when(invite["expires_at"]), tr(lang, ", access ", ", доступ "), self.term(invite, lang),
                       ":")
         doc.p(code(new))
-        if self.username:
-            url = f"https://t.me/{self.username}?start={new}"
-            doc.p(link(url, url))
-        return doc.p(i(tr(lang, "Forward the link: it lets one in with a tap. The code is shown only this once: only "
-                                "its hash is kept.",
-                          "Перешли ссылку: по ней входят в одно касание. Код показан только сейчас: хранится лишь "
-                          "его хэш.")))
+        if not self.username:
+            return doc.p(i(tr(lang, "Tap the code to copy it. It is shown only this once: only its hash is kept.",
+                              "Нажми на код, чтобы скопировать. Он показан только сейчас: хранится лишь его хэш.")))
+        url = f"https://t.me/{self.username}?start={new}"
+        doc.p(code(url))   # monospace: a tap copies it
+        doc.p(i(tr(lang, "Tap the link to copy it: it lets one in with a tap. The code is shown only this once: only "
+                         "its hash is kept.",
+                   "Нажми на ссылку, чтобы скопировать: по ней входят в одно касание. Код показан только сейчас: "
+                   "хранится лишь его хэш.")))
+        return doc.buttons((tr(lang, "Send to a chat", "Отправить в чат"),
+                            "https://t.me/share/url?url=" + quote(url, safe="")))
 
     def group_step(self, lang: str, skip: str | None = None) -> Step:
         """A group: a button for each, or its name typed. Asked only when there are groups."""
@@ -837,7 +842,7 @@ class OwnerCommands:
                        tr(lang, "Read", "Прочитана"), tr(lang, "State", "Состояние")],
                       [[link(sheet_name(s), s["url"]), str(s["followers"]),
                         self.when(s["ok_at"]) if s["ok_at"] else never,
-                        tr(lang, "failing", "ошибка") if s["error"] else "✓"] for s in sheets],
+                        tr(lang, "failing", "ошибка") if s["error"] else "ok"] for s in sheets],
                       [None, "right", None, None])
             errors = [f"{sheet_name(s)}: {s['error']} ({tr(lang, 'since', 'с')} {self.when(s['error_since'])})"
                       for s in sheets if s["error"]]
@@ -847,7 +852,7 @@ class OwnerCommands:
         rows = self.store.db.execute(
             "select (select count(*) from subscriptions where error is not null) bad_rows, "
             "(select count(*) from grade_events where post_id is null) waiting").fetchone()
-        counts = [
+        doc.h(tr(lang, "Users", "Пользователи") + f" · {len(users)}").table([], [
             [tr(lang, "without a full name", "без ФИО"), str(sum(not u["student"] for u in users))],
             [tr(lang, "blocked the bot", "заблокировали бота"), str(sum(bool(u["paused"]) for u in users))],
             [tr(lang, "subscriptions with a problem in the rows", "подписок с проблемой в строках"),
@@ -857,12 +862,8 @@ class OwnerCommands:
              str(sum(bool(u["expires_at"]) and not self.access.expired(u)
                      and clock.parse(u["expires_at"]) - self.now() <= SOON for u in users))],
             [tr(lang, "access ended", "доступ закончился"), str(sum(self.access.expired(u) for u in users))],
-            [tr(lang, "grades waiting to be sent", "оценок ждут отправки"), str(rows["waiting"])]]
-        doc.h(tr(lang, "Users", "Пользователи") + f" · {len(users)}")
-        if counts := [row for row in counts if row[1] != "0"]:
-            doc.table([], counts, [None, "right"])
-        else:
-            doc.p(tr(lang, "All in order.", "Всё в порядке."))
+            [tr(lang, "grades waiting to be sent", "оценок ждут отправки"), str(rows["waiting"])]],
+            [None, "right"])
         doc.h("Haiku")
         if self.budget is None:
             doc.p(tr(lang, "Not connected.", "Не подключён."))

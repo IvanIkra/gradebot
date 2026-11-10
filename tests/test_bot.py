@@ -30,7 +30,10 @@ async def test_stranger_needs_a_code(bot, api):
 async def test_invite_and_come_in(bot, api, access):
     code = await invite(bot, api)
     text = api.last(OWNER)["text"]
-    assert "«Петя»" in text and "16.11 15:00" in text and f"https://t.me/gradebot_test_bot?start={code}" in text
+    assert "«Петя»" in text and "16.11 15:00" in text
+    assert f"<code>https://t.me/gradebot_test_bot?start={code}</code>" in text   # a tap copies it
+    assert buttons(api.last(OWNER)) == {
+        "Отправить в чат": f"https://t.me/share/url?url=https%3A%2F%2Ft.me%2Fgradebot_test_bot%3Fstart%3D{code}"}
 
     await bot.handle(message(PETR, f"/start {code}"))
     assert "Как ты записан в таблицах?" in api.last(PETR)["text"] and bot.asks[PETR].step == "student"
