@@ -33,7 +33,7 @@ async def test_invite_and_come_in(bot, api, access):
     assert "«Петя»" in text and "16.11 15:00" in text and f"https://t.me/gradebot_test_bot?start={code}" in text
 
     await bot.handle(message(PETR, f"/start {code}"))
-    assert "/name Фамилия Имя" in api.last(PETR)["text"]
+    assert "Как ты записан в таблицах?" in api.last(PETR)["text"] and bot.asks[PETR].step == "student"
     assert access.user(PETR)["lang"] == "ru"
     note = api.last(OWNER)
     assert "Пётр (@petr_example): вход по коду «Петя»" in note["text"]
@@ -47,7 +47,7 @@ async def test_pasted_code_works(bot, api, access):
     code = await invite(bot, api)
     await bot.handle(message(PETR, code.lower().replace("-", ""), lang="en"))
     assert access.user(PETR)["lang"] == "en"
-    assert "You're in" in api.last(PETR)["text"]
+    assert "You're in" in api.sent(PETR)[-2]["text"]
 
 
 async def test_too_many_wrong_codes_silence_the_bot(bot, api):

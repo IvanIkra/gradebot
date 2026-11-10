@@ -1,6 +1,7 @@
 import pytest
 
 from gradebot.access import TRUSTED
+from gradebot.i18n import days
 
 from .conftest import OWNER, buttons, callback, invite_code, message, press
 from .test_sheets import ALG, CALC
@@ -20,7 +21,7 @@ async def test_name_tells_the_owner_and_can_be_reset(bot, api, access, petr):
     assert "не похоже на ФИО" in api.last(PETR)["text"]
     await bot.handle(message(PETR, "/name  Петров   Пётр "))
     assert access.user(PETR)["student"] == "Петров Пётр"
-    assert "Записал: <b>Петров Пётр</b>" in api.last(PETR)["text"] and "/sheet" in api.last(PETR)["text"]
+    assert "Записал: <b>Петров Пётр</b>" in api.last(PETR)["text"] and "просто вставь" in api.last(PETR)["text"]
     note = api.last(OWNER)
     assert "Пётр (@petr_example): ФИО <b>Петров Пётр</b>" in note["text"]
     await bot.handle(message(PETR, "/name Петров Пётр"))
@@ -33,7 +34,7 @@ async def test_name_tells_the_owner_and_can_be_reset(bot, api, access, petr):
     assert "ФИО <b>Петров Пётр Петрович</b> у Пётр (@petr_example) сброшено" in api.last(OWNER)["text"]
     assert "Владелец сбросил твоё ФИО" in api.last(PETR)["text"]
     await bot.handle(message(PETR, "/name"))
-    assert "ФИО не указано" in api.last(PETR)["text"]
+    assert "Как ты записан в таблицах?" in api.last(PETR)["text"]
 
 
 async def test_start_again_says_you_are_in(bot, api, petr):
@@ -49,7 +50,7 @@ async def test_sheets_follow_and_unfollow(bot, api, sheets, access, petr):
     await bot.handle(message(PETR, "/sheet https://example.com/x"))
     assert "не ссылка на таблицу Google" in api.last(PETR)["text"]
     await bot.handle(message(PETR, CALC))                       # the answer to the link asked again
-    assert "Короткое имя таблицы" in api.last(PETR)["text"]
+    assert "Как коротко назвать таблицу?" in api.last(PETR)["text"]
     await press(bot, PETR)                                      # «Title from Google»
     reply = api.last(PETR)["text"]
     assert "Подписал на <b>…789abc</b>" in reply and "нужно ФИО" in reply
@@ -84,7 +85,7 @@ async def test_quiet_hours(bot, api, access, petr):
 
 async def test_language(bot, api, access, petr):
     await bot.handle(message(PETR, "/lang"))
-    assert buttons(api.last(PETR)) == {"English": "lg:en", "Русский": "lg:ru"}
+    assert buttons(api.last(PETR)) == {"English": "lg:en", "Русский ✓": "lg:ru"}
     await bot.handle(callback(PETR, "lg:en"))
     assert access.user(PETR)["lang"] == "en" and "Language: English" in api.last(PETR)["text"]
     await bot.handle(message(PETR, "/help"))
@@ -104,12 +105,12 @@ async def test_stop_drops_own_sheets(bot, api, sheets, access, petr):
 
 async def test_a_course_for_a_sheet_new_to_the_bot(bot, api, sheets, access, petr):
     await bot.handle(message(PETR, "/help"))
-    assert "/sheet &lt;ссылка&gt; [имя]" in api.last(PETR)["text"] and "название таблицы в Google" in \
+    assert "/sheet &lt;ссылка&gt; [имя]" in api.last(PETR)["text"] and "просто прислать ссылку" in \
         api.last(PETR)["text"]
     await bot.handle(message(PETR, "/sheet"))
     assert "Пришли ссылку на таблицу" in api.last(PETR)["text"]
     await bot.handle(message(PETR, CALC))
-    assert "Без имени бот берёт название таблицы в Google" in api.last(PETR)["text"]
+    assert "Как коротко назвать таблицу?" in api.last(PETR)["text"] and "Как в Google" in buttons(api.last(PETR))
     await bot.handle(callback(PETR, "ac", bot.asks[PETR].message_id))
     assert "Отменено" in api.last(PETR)["text"] and PETR not in bot.asks
     access.set_rank(PETR, TRUSTED)
@@ -141,9 +142,24 @@ async def test_a_course_for_a_sheet_new_to_the_bot(bot, api, sheets, access, pet
 
 async def test_a_link_pasted_alone_follows_the_sheet(bot, api, sheets, access, petr):
     access.set_rank(PETR, TRUSTED)
-    await bot.handle(message(PETR, CALC))
+    assert bot.asks[PETR].step == "student"             # the full name is asked after coming in
+    await bot.handle(message(PETR, CALC))               # a link instead: it is followed, not taken for a name
     await press(bot, PETR)  # no short name
     assert [s["url"] for s in sheets.followed(PETR)] == [sheets.by_url(CALC)["url"]]
+    assert access.user(PETR)["student"] is None
+
+
+async def test_add_a_sheet_from_the_list(bot, api, petr):
+    await bot.handle(message(PETR, "/sheets"))
+    assert "просто вставь её сюда" in api.last(PETR)["text"]
+    await bot.handle(callback(PETR, buttons(api.last(PETR))["Добавить таблицу"]))
+    assert "Пришли ссылку на таблицу" in api.last(PETR)["text"] and bot.asks[PETR].step == "link"
+
+
+def test_days_in_words():
+    assert [days("ru", n) for n in (1, 3, 7, 11, 21, 22, 30)] == \
+        ["1 день", "3 дня", "7 дней", "11 дней", "21 день", "22 дня", "30 дней"]
+    assert (days("en", 1), days("en", 30)) == ("1 day", "30 days")
 
 
 async def test_a_user_without_a_full_name_is_reminded_once(bot, api, access, petr, clock):

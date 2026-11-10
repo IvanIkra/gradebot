@@ -120,7 +120,7 @@ def news_messages(sections: list[tuple[dict, list[dict]]], lang: str) -> list[tu
 
 def grades_section(sheet: dict, items: list[dict], lang: str, problem: str | None, table: bool = True) -> Doc:
     """A sheet in /grades: details headed «Calc · 12 grades · 2 new», open when some are new; the table of its
-    grades and the «Wrong» button for the layout inside."""
+    grades and the «Report a mistake» button for the layout inside."""
     new = sum(item["new"] for item in items)
     summary = " · ".join([sheet["title"] or course_of(sheet),
                           tr(lang, f"{len(items)} grades", f"оценок: {len(items)}"),
@@ -133,5 +133,5 @@ def grades_section(sheet: dict, items: list[dict], lang: str, problem: str | Non
     elif not items and not problem:
         inner.p(tr(lang, "No grades yet.", "Оценок пока нет."))
     if items:
-        inner.buttons((tr(lang, "Wrong", "Неверно"), f"wr:{sheet['id']}", "link"))
+        inner.buttons((tr(lang, "Report a mistake", "Сообщить об ошибке"), f"wr:{sheet['id']}", "link"))
     return Doc().details(summary, inner, open_=bool(new))

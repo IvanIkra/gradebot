@@ -19,6 +19,7 @@ from . import clock, poller
 from .access import MEMBER, TRUSTED
 from .dialog import Step, asks_hint, link_step
 from .groups import GroupError, group_name
+from .i18n import days as n_days
 from .i18n import tr
 from .rich import Doc, b, code, i, link
 from .sheets import SheetError, course
@@ -173,8 +174,9 @@ class OwnerCommands:
                                 "код приглашения: на сколько человек, сколько действует, на сколько доступ; "
                                 "подробно — /invite help")],
                             ["/codes", tr(lang, "open codes, revoke", "действующие коды, отзыв")],
-                            ["/users", tr(lang, "users: rank, group, access, delete",
-                                          "пользователи: ранг, группа, доступ, удаление")],
+                            ["/users " + tr(lang, "[text]", "[текст]"),
+                             tr(lang, "users, a search; a user's card: rank, group, access, delete",
+                                "пользователи, поиск; карточка: ранг, группа, доступ, удаление")],
                             ["/groups " + tr(lang, "[name [new name]]", "[имя [новое имя]]"),
                              tr(lang, "groups: a new one, a new name; delete",
                                 "группы: новая, переименовать; удаление")],
@@ -240,9 +242,8 @@ class OwnerCommands:
             Step("lifetime", plain(tr(lang, "How long does the code work? ", "Сколько действует код? ") + days),
                  check=token("lifetime", lambda v: f"{v}{tr(lang, 'd', 'д')}" if v.isdigit() else v),
                  error=lambda lang, e: days,
-                 choices=lambda data: [(tr(lang, "1 day", "1 день"), "1d"), (tr(lang, "3 days", "3 дня"), "3d"),
-                                       (tr(lang, "30 days", "30 дней"), "30d")],
-                 skip=lambda data: tr(lang, f"{self.access.invite_days} days", f"{self.access.invite_days} дн.")),
+                 choices=lambda data: [(n_days(lang, n), f"{n}d")
+                                       for n in sorted({1, 3, self.access.invite_days, 30})]),
             Step("access", plain(tr(lang, "How long does the access last? ", "На сколько открыть доступ? ") + access),
                  check=token("access_any", lambda v: v if v.startswith("+") else
                              f"+{v}{tr(lang, 'd', 'д')}" if v.isdigit() else f"+{v}"),
@@ -279,8 +280,10 @@ class OwnerCommands:
         if self.username:
             url = f"https://t.me/{self.username}?start={new}"
             doc.p(link(url, url))
-        return doc.p(i(tr(lang, "Only its hash is kept: this is the only time the code is shown.",
-                          "Хранится только хэш: код показан один раз.")))
+        return doc.p(i(tr(lang, "Forward the link: it lets one in with a tap. The code is shown only this once: only "
+                                "its hash is kept.",
+                          "Перешли ссылку: по ней входят в одно касание. Код показан только сейчас: хранится лишь "
+                          "его хэш.")))
 
     def group_step(self, lang: str, skip: str | None = None) -> Step:
         """A group: a button for each, or its name typed. Asked only when there are groups."""
@@ -323,7 +326,7 @@ class OwnerCommands:
                           "до 5 человек; x* — сколько угодно, пока код не истёк или не отозван; без этого — один")],
                 [tr(lang, "3d, 12h", "3д, 12ч"),
                  tr(lang, f"how long the code works; {self.access.invite_days} days by default",
-                    f"сколько действует код; по умолчанию {self.access.invite_days} дн.")],
+                    f"сколько действует код; по умолчанию {n_days(lang, self.access.invite_days)}")],
                 [tr(lang, "+30d, +31.12", "+30д, +31.12"),
                  tr(lang, "access for 30 days from coming in, or until 31.12; for good by default",
                     "доступ на 30 дней после входа или до 31.12; по умолчанию бессрочно")],
@@ -348,7 +351,7 @@ class OwnerCommands:
 
     def term(self, invite: dict, lang: str) -> str:
         if invite["access_days"]:
-            return tr(lang, f"for {invite['access_days']} days", f"на {invite['access_days']} дн.")
+            return tr(lang, "for ", "на ") + n_days(lang, invite["access_days"])
         if invite["access_until"]:
             return tr(lang, "until ", "до ") + self.when(invite["access_until"])
         return tr(lang, "for good", "бессрочный")
@@ -703,9 +706,9 @@ class OwnerCommands:
             return
         sheet, added = self.groups.add_sheet(group["id"], data["link"], self.owner_id, data.get("name") or None)
         doc = Doc().p(
-            tr(lang, "Shared sheet ", "Общая таблица "), b(sheet_name(sheet)), tr(lang, " of the group ", " группы "),
-            b(group["name"]), ". ", tr(lang, f"Users who started to follow it: {added}.",
-                                       f"Подписано пользователей: {added}."))
+            b(sheet_name(sheet)), tr(lang, " is a shared sheet of the group ", " — общая таблица группы "),
+            b(group["name"]), ". ", tr(lang, f"Everyone in the group follows it, newcomers too; added now: {added}.",
+                                       f"На неё подписаны все в группе, и новички тоже; добавлено сейчас: {added}."))
         await self.api.send(chat, doc if sheet["course"] else doc.p(self.no_course(lang)))
         self.read_soon(None, [sheet["id"]])
 
@@ -834,7 +837,7 @@ class OwnerCommands:
                        tr(lang, "Read", "Прочитана"), tr(lang, "State", "Состояние")],
                       [[link(sheet_name(s), s["url"]), str(s["followers"]),
                         self.when(s["ok_at"]) if s["ok_at"] else never,
-                        tr(lang, "failing", "ошибка") if s["error"] else "ok"] for s in sheets],
+                        tr(lang, "failing", "ошибка") if s["error"] else "✓"] for s in sheets],
                       [None, "right", None, None])
             errors = [f"{sheet_name(s)}: {s['error']} ({tr(lang, 'since', 'с')} {self.when(s['error_since'])})"
                       for s in sheets if s["error"]]
@@ -844,7 +847,7 @@ class OwnerCommands:
         rows = self.store.db.execute(
             "select (select count(*) from subscriptions where error is not null) bad_rows, "
             "(select count(*) from grade_events where post_id is null) waiting").fetchone()
-        doc.h(tr(lang, "Users", "Пользователи") + f" · {len(users)}").table([], [
+        counts = [
             [tr(lang, "without a full name", "без ФИО"), str(sum(not u["student"] for u in users))],
             [tr(lang, "blocked the bot", "заблокировали бота"), str(sum(bool(u["paused"]) for u in users))],
             [tr(lang, "subscriptions with a problem in the rows", "подписок с проблемой в строках"),
@@ -854,8 +857,12 @@ class OwnerCommands:
              str(sum(bool(u["expires_at"]) and not self.access.expired(u)
                      and clock.parse(u["expires_at"]) - self.now() <= SOON for u in users))],
             [tr(lang, "access ended", "доступ закончился"), str(sum(self.access.expired(u) for u in users))],
-            [tr(lang, "grades waiting to be sent", "оценок ждут отправки"), str(rows["waiting"])]],
-            [None, "right"])
+            [tr(lang, "grades waiting to be sent", "оценок ждут отправки"), str(rows["waiting"])]]
+        doc.h(tr(lang, "Users", "Пользователи") + f" · {len(users)}")
+        if counts := [row for row in counts if row[1] != "0"]:
+            doc.table([], counts, [None, "right"])
+        else:
+            doc.p(tr(lang, "All in order.", "Всё в порядке."))
         doc.h("Haiku")
         if self.budget is None:
             doc.p(tr(lang, "Not connected.", "Не подключён."))

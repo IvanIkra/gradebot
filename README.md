@@ -15,9 +15,9 @@ and no public web part: the bot only talks to the Bot API by long polling.
 | Who | Command | What it does |
 |---|---|---|
 | anyone | `/start <code>` | come in with an invite code (the `t.me/<bot>?start=<code>` link does the same) |
-| user | `/grades` | your grades by sheet, the new ones of the last week marked; "Wrong" reports a bad layout to the owner |
+| user | `/grades` | your grades by sheet, the new ones of the last week marked; "Report a mistake" tells the owner of a bad layout |
 | user | `/name Surname Name` | your full name exactly as the sheets have it; the owner sees it and may reset it |
-| user | `/sheet <link> [short name]` | follow a Google Sheet (open to anyone with the link); a member's sheet the bot does not read yet waits for the owner's approval. The short name is also the sheet's hashtag and is kept only for a sheet new to the bot; without it the bot names the sheet by its title in Google |
+| user | `/sheet <link> [short name]` | follow a Google Sheet (open to anyone with the link); a link sent alone does the same; a member's sheet the bot does not read yet waits for the owner's approval. The short name is also the sheet's hashtag and is kept only for a sheet new to the bot; without it the bot names the sheet by its title in Google |
 | user | `/sheets` | your sheets: when each was read, how many grades, what is wrong; check now or unfollow |
 | user | `/group` | your group, with buttons to move to another one: you follow the shared sheets of your group. A group that came with the invite code is changed by the owner only |
 | user | `/quiet [23-8\|off]` | quiet hours: messages then come without a sound; 23:00–8:00 by default |
@@ -35,8 +35,9 @@ and no public web part: the bot only talks to the Bot API by long polling.
 | owner | `/status` | sheets and their errors, users, Haiku spending today and this month |
 | owner | `/interval [minutes]` | how often the sheets are read: 30 minutes by default, 5 to 240 |
 
-A command sent without its arguments, as the command menu sends it, asks for them one by one: buttons for the usual
-answers, a button to leave an optional one empty, and Cancel. A command typed with its arguments runs at once.
+After the invite code the bot asks for the full name at once. A command sent without its arguments, as the command
+menu sends it, asks for them one by one: buttons for the usual answers, a button to leave an optional one empty, and
+Cancel. A command typed with its arguments runs at once.
 
 A sheet is stored once for everyone who follows it, so it is downloaded and laid out once.
 

@@ -153,7 +153,7 @@ async def test_grades_view_marks_the_new_ones_and_refreshes_in_place(bot, api, f
     view = api.last(IVAN)
     assert "<details><summary>Матанализ · оценок: 1</summary>" in view["text"]  # nothing new: closed
     assert "<td>HW 1</td>" in view["text"] and "3.5 из 5" in view["text"]
-    assert buttons(view) == {"Неверно": f"wr:{followed}", "Обновить": "rf"}
+    assert buttons(view) == {"Сообщить об ошибке": f"wr:{followed}", "Обновить": "rf"}
 
     news(bot, followed, clock, item("k1", "HW 1", 7, raw=3.5, mx=5), item("k2", "Quiz 1", 9, position=1))
     await bot.handle(callback(IVAN, "rf", message_id=321))
@@ -169,11 +169,11 @@ async def test_grades_view_marks_the_new_ones_and_refreshes_in_place(bot, api, f
 async def test_grades_view_tells_what_is_wrong(bot, api, access, sheets):
     add_user(access, IVAN, None)
     await bot.handle(message(IVAN, "/grades"))
-    assert "Сначала ФИО" in api.last(IVAN)["text"]
+    assert "Как ты записан в таблицах?" in api.last(IVAN)["text"] and IVAN in bot.asks
     access.set_student(IVAN, "Иванов Иван")
     sheet, _ = sheets.follow(IVAN, URL)
     await bot.handle(message(IVAN, "/grades"))
-    assert "Ещё не прочитана" in api.last(IVAN)["text"] and "Неверно" not in api.last(IVAN)["text"]
+    assert "Ещё не прочитана" in api.last(IVAN)["text"] and "Сообщить об ошибке" not in api.last(IVAN)["text"]
     bot.grades.failed(IVAN, sheet["id"], "no_row")
     await bot.handle(message(IVAN, "/grades"))
     assert "твоей строки нет ни на одной вкладке" in api.last(IVAN)["text"]
@@ -219,7 +219,8 @@ async def test_sheets_view_and_check(bot, api, followed):
     view = api.last(IVAN)
     assert "<th>Прочитана</th>" in view["text"] and "<td>09.11 15:00</td>" in view["text"]
     assert '<td align="right">1</td>' in view["text"] and "Ошибка" not in view["text"]
-    assert buttons(view) == {"Проверить: Матанализ": f"ck:{followed}", "Отписаться: Матанализ": f"us:{followed}"}
+    assert buttons(view) == {"Проверить: Матанализ": f"ck:{followed}", "Отписаться: Матанализ": f"us:{followed}",
+                             "Добавить таблицу": "add"}
     assert f'data="us:{followed}" style="danger"' in view["text"]
     await bot.handle(callback(IVAN, f"ck:{followed}"))
     assert requested == [(followed, IVAN)]

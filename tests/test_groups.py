@@ -85,7 +85,7 @@ async def test_a_code_with_a_group(bot, api, access, sheets):
     await bot.handle(message(OWNER, "/codes"))
     assert "<td>A1</td>" in api.last(OWNER)["text"]
     await bot.handle(message(PETR, f"/start {invite_code(reply)}"))
-    welcome = api.last(PETR)
+    welcome = api.sent(PETR)[-2]                                # then the question of the full name
     assert "Твоя группа: <b>A1</b>" in welcome["text"] and "общие таблицы (1)" in welcome["text"]
     assert not any(data.startswith("gj:") for data in buttons(welcome).values())
     assert ": вход по коду «Петя», группа A1" in api.last(OWNER)["text"]
@@ -98,13 +98,13 @@ async def test_a_code_without_a_group_asks_for_one(bot, api, access, sheets):
     await bot.handle(message(OWNER, "/invite Петя"))
     assert "в группу" not in api.last(OWNER)["text"]
     await bot.handle(message(PETR, f"/start {invite_code(api.last(OWNER)['text'])}"))
-    welcome = api.last(PETR)
+    welcome = api.sent(PETR)[-2]
     assert "В какой ты группе?" in welcome["text"]
     assert buttons(welcome) == {"A1": f"gj:{a1}", "B2": f"gj:{b2}", "Без группы": "gj:0"}
     await bot.handle(callback(PETR, f"gj:{b2}"))
     edited = api.last(PETR)
     assert edited["method"] == "editMessageText" and "Твоя группа: <b>B2</b>" in edited["text"]
-    assert "/name" in edited["text"] and access.user(PETR)["grp"] == b2
+    assert bot.asks[PETR].step == "student" and access.user(PETR)["grp"] == b2   # the name is still asked
     assert "Пётр (@petr_example): теперь в группе <b>B2</b>" in api.last(OWNER)["text"]
     assert [s["url"] for s in sheets.followed(PETR)] == [sheets.by_url(ALG)["url"]]
 
@@ -112,7 +112,8 @@ async def test_a_code_without_a_group_asks_for_one(bot, api, access, sheets):
 async def test_no_groups_no_question(bot, api):
     await bot.handle(message(OWNER, "/invite Петя"))
     await bot.handle(message(PETR, f"/start {invite_code(api.last(OWNER)['text'])}"))
-    assert "группе" not in api.last(PETR)["text"] and buttons(api.last(PETR)) == {}
+    welcome = api.sent(PETR)[-2]
+    assert "Ты в деле" in welcome["text"] and "группе" not in welcome["text"] and buttons(welcome) == {}
 
 
 async def test_group_command(bot, api, access, sheets):
@@ -149,7 +150,8 @@ async def test_the_owner_manages_groups(bot, api, access, sheets):
     gid = bot.groups.find("A2")["id"]
     bot.groups.join(PETR, gid)
     await bot.handle(message(OWNER, f"/groupsheet {CALC} Матан"))   # one group: it may be left out
-    assert "Общая таблица <b>Матан</b> группы <b>A2</b>. Подписано пользователей: 1." in api.last(OWNER)["text"]
+    assert "<b>Матан</b> — общая таблица группы <b>A2</b>" in api.last(OWNER)["text"]
+    assert "добавлено сейчас: 1." in api.last(OWNER)["text"]
     await bot.handle(message(OWNER, "/groups B1"))
     await bot.handle(message(OWNER, f"/groupsheet {ALG}"))
     question = api.last(OWNER)

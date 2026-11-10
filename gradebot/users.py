@@ -3,7 +3,8 @@
 Callbacks: `grades` sends /grades, `rf` redraws it in place, `wr:<sheet>` complains about a sheet's layout,
 `ck:<sheet>` reads a sheet now, `us:<sheet>` unfollows it, `cr:<request>` cancels a request for a sheet waiting for
 the owner, `gp:<group>` moves the user to a group (0: none) from /group, `gj:<group>` from the first message,
-`qt:<hours|off>` sets quiet hours, `lg:<en|ru>` the language, `stop` and `stop!` cancel and confirm /stop.
+`add` asks for a sheet to follow, `qt:<hours|off>` sets quiet hours, `lg:<en|ru>` the language, `stop` and `stop!`
+cancel and confirm /stop.
 """
 
 import datetime as dt
@@ -17,7 +18,7 @@ from .i18n import LANGUAGES, tr
 from .layout import label
 from .notices import explain
 from .profile import ProfileError
-from .rich import Doc, Html, b, code, join, link
+from .rich import Doc, Html, b, code, i, join, link
 from .sheets import GOOGLE_SHEET, SheetError, course
 from .sheets import name as sheet_name
 
@@ -50,12 +51,16 @@ class UserCommands:
             await self.api.send(chat, tr(lang, "You're already in. /help lists the commands.",
                                          "Ты уже в списке. Команды — в /help."))
         else:
-            await self.api.send(chat, self.user_help(lang))
+            await self.api.send(chat, Doc().p(i(tr(lang, "That's not a command. Here is what I can do:",
+                                                   "Это не команда. Вот что я умею:"))).extend(self.user_help(lang)))
 
     async def user_callback(self, chat: int, message_id: int, user: dict, kind: str, arg: str) -> str | None:
         lang = user["lang"]
         if kind == "grades":
-            await self.api.send(chat, self.grades_view(user))
+            await self.cmd_grades(chat, user, "")
+            return None
+        if kind == "add":
+            await self.cmd_sheet(chat, user, "")
             return None
         if kind == "rf":
             await self.api.edit(chat, message_id, self.grades_view(user))
@@ -107,11 +112,11 @@ class UserCommands:
                 ["/name " + tr(lang, "Surname Name", "Фамилия Имя"),
                  tr(lang, "your full name as the sheets have it", "ФИО, как в таблицах")],
                 ["/sheet " + tr(lang, "<link> [short name]", "<ссылка> [имя]"),
-                 tr(lang, "follow a Google Sheet; the short name is also its hashtag, without one the sheet's title in "
-                          "Google",
-                    "подписаться на таблицу; короткое имя — это и хэштег, без него — название таблицы в Google")],
-                ["/sheets", tr(lang, "your sheets, unfollow", "твои таблицы, отписка")],
-                ["/group", tr(lang, "your group: you follow its shared sheets", "твоя группа: её общие таблицы")],
+                 tr(lang, "follow a Google Sheet; a link sent alone does the same",
+                    "подписаться на таблицу Google; можно просто прислать ссылку")],
+                ["/sheets", tr(lang, "your sheets: check, unfollow", "твои таблицы: проверить, отписаться")],
+                *([["/group", tr(lang, "your group: you follow its shared sheets", "твоя группа и её общие таблицы")]]
+                  if self.groups.all() else []),
                 ["/quiet", tr(lang, "quiet hours", "тихие часы")],
                 ["/lang", tr(lang, "language", "язык")],
                 ["/feedback " + tr(lang, "<text>", "<текст>"),
@@ -127,12 +132,15 @@ class UserCommands:
         lang, now = user["lang"], user["student"]
 
         def prompt(data: dict) -> Doc:
-            return Doc().p(tr(lang, "Your full name: ", "Твоё ФИО: ") if now else tr(lang, "No full name yet. ",
-                                                                                   "ФИО не указано. "),
-                           b(now) if now else "", ". " if now else "",
-                           tr(lang, "Send it exactly as the sheets have it, for example ",
-                              "Напиши его точно так, как в таблицах, например "),
-                           code(tr(lang, "Ivanov Ivan", "Иванов Иван")), ".")
+            if now:
+                return Doc().p(tr(lang, "Your full name: ", "Твоё ФИО: "), b(now), ". ",
+                               tr(lang, "To change it, send the new one exactly as the sheets have it.",
+                                  "Чтобы сменить, пришли новое — точно как в таблицах."))
+            return Doc().p(b(tr(lang, "What's your name in the sheets?", "Как ты записан в таблицах?")), " ",
+                           tr(lang, "Send your surname and name exactly as they are there, for example ",
+                              "Пришли фамилию и имя точно так же, например "),
+                           code(tr(lang, "Ivanov Ivan", "Иванов Иван")), ". ",
+                           tr(lang, "That's how I find your row.", "По ним я найду твою строку."))
 
         step = Step("student", prompt, check=lambda value, data: profile.student(value),
                     error=lambda lang, e: tr(lang, "That doesn't look like a full name: two words or more, letters "
@@ -158,8 +166,7 @@ class UserCommands:
             doc.p(tr(lang, "Reading your sheets now; I'll write what I find.",
                      "Сейчас прочитаю твои таблицы и напишу, что нашёл."))
         else:
-            doc.p(tr(lang, "Now a sheet to follow: ", "Теперь таблица: "),
-                  code(tr(lang, "/sheet <link>", "/sheet <ссылка>")))
+            doc.p(self.no_sheets(lang))
         await self.api.send(chat, doc)
         owner = self.owner_lang
         before = [tr(owner, " (was ", " (было "), user["student"], ")"] if user["student"] else []
@@ -180,7 +187,7 @@ class UserCommands:
         steps = [link_step(lang),
                  Step("name", lambda data: Doc().p(self.course_hint(lang)), check=lambda value, data: course(value),
                       error=lambda lang, e: self.follow_error(e, lang),
-                      skip=lambda data: tr(lang, "Title from Google", "Название из Google"),
+                      skip=lambda data: tr(lang, "As in Google", "Как в Google"),
                       when=lambda data: self.sheets.by_url(data["link"]) is None and not any(
                           r["url"] == data["link"] for r in self.sheets.requests(user["tg_id"])))]
         await self.flow(chat, lang, steps, lambda data: self.add_sheet(chat, user["tg_id"], data), data)
@@ -213,13 +220,10 @@ class UserCommands:
 
     @staticmethod
     def course_hint(lang: str) -> Html:
-        return join(tr(lang, "A short name for the sheet, up to 10 characters; it is its hashtag too. For example ",
-                       "Короткое имя таблицы, до 10 символов; оно же хэштег. Например "),
-                    code(tr(lang, "Calc", "Матан")), ". ",
-                    tr(lang, "Without it the bot takes the sheet's title in Google. It counts only if the bot doesn't "
-                             "read the sheet yet; later only the owner changes it.",
-                       "Без имени бот берёт название таблицы в Google. Имя учитывается, только если бот ещё не "
-                       "читает таблицу; потом его меняет только владелец."))
+        return join(b(tr(lang, "A short name for the sheet?", "Как коротко назвать таблицу?")), " ",
+                    tr(lang, "Up to 10 characters, like ", "До 10 символов, например "),
+                    code(tr(lang, "Calc", "Матан")), tr(lang, ": it becomes the hashtag in messages with grades.",
+                                                        ": это будет хэштег в сообщениях с оценками."))
 
     @staticmethod
     def follow_error(error: SheetError, lang: str) -> str:
@@ -279,10 +283,10 @@ class UserCommands:
         others = [g for g in groups if not mine or g["id"] != mine["id"]]
         if not others and not mine:
             return doc.p(tr(lang, "There are no groups yet.", "Групп пока нет."))
-        doc.p(tr(lang, "In a group you follow its shared sheets. Moving to another one unfollows the old group's "
-                       "sheets (with their grades) and follows the new one's.",
-                 "Все в группе подписаны на её общие таблицы. При переходе в другую группу подписки на таблицы "
-                 "старой снимаются (вместе с оценками), а на таблицы новой — добавляются."))
+        doc.p(tr(lang, "You follow the shared sheets of your group. Moving to another group swaps them: the old "
+                       "ones go with their grades, the new ones come.",
+                 "Ты подписан на общие таблицы своей группы. В другой группе старые уйдут вместе с оценками, "
+                 "а новые добавятся."))
         return group_buttons(doc, others, "gp", lang, none=mine is not None)
 
     async def choose_group(self, chat: int, message_id: int, user: dict, gid: int, first: bool) -> str | None:
@@ -328,8 +332,7 @@ class UserCommands:
 
     def sheets_view(self, user: dict) -> Doc:
         lang, sheets = user["lang"], self.sheets.followed(user["tg_id"])
-        doc = Doc() if sheets else Doc().p(tr(lang, "No sheets yet: ", "Таблиц пока нет: "),
-                                           code(tr(lang, "/sheet <link>", "/sheet <ссылка>")))
+        doc = Doc() if sheets else Doc().p(self.no_sheets(lang))
         if sheets:
             self.sheets_table(doc, user, sheets)
         if requests := self.sheets.requests(user["tg_id"]):
@@ -337,7 +340,16 @@ class UserCommands:
             doc.table([], [[link(r["url"], r["url"])] for r in requests])
             for n, r in enumerate(requests[:30], 1):
                 doc.buttons((tr(lang, f"Cancel request {n}", f"Отменить заявку {n}"), f"cr:{r['id']}", "danger"))
-        return doc
+        return doc.buttons(self.add_button(lang))
+
+    @staticmethod
+    def no_sheets(lang: str) -> str:
+        return tr(lang, "No sheets yet. Send me a link to a Google Sheet with your grades: just paste it here.",
+                  "Таблиц пока нет. Пришли ссылку на таблицу Google с оценками — просто вставь её сюда.")
+
+    @staticmethod
+    def add_button(lang: str) -> tuple:
+        return (tr(lang, "Add a sheet", "Добавить таблицу"), "add", "primary")
 
     def sheets_table(self, doc: Doc, user: dict, sheets: list[dict]) -> None:
         lang = user["lang"]
@@ -360,6 +372,9 @@ class UserCommands:
     # --- grades ----------------------------------------------------------------------------------
 
     async def cmd_grades(self, chat: int, user: dict, arg: str) -> None:
+        if not user["student"]:  # nothing to show without it: ask for it
+            await self.cmd_name(chat, user, "")
+            return
         await self.api.send(chat, self.grades_view(user))
 
     def grades_view(self, user: dict) -> Doc:
@@ -370,8 +385,7 @@ class UserCommands:
             return Doc().p(tr(lang, "First your full name as the sheets have it: ", "Сначала ФИО, как в таблицах: "),
                            code(tr(lang, "/name Surname Name", "/name Фамилия Имя")))
         if not sheets:
-            return Doc().p(tr(lang, "No sheets yet: ", "Таблиц пока нет: "),
-                           code(tr(lang, "/sheet <link>", "/sheet <ссылка>")))
+            return Doc().p(self.no_sheets(lang)).buttons(self.add_button(lang))
         found = []
         for s in sheets:
             problem = self.sheet_problem(s, lang) or \
@@ -458,7 +472,8 @@ class UserCommands:
 
     def lang_view(self, lang: str) -> Doc:
         doc = Doc().p(tr(lang, "Language: English.", "Язык: русский."))
-        return doc.buttons(("English", "lg:en"), ("Русский", "lg:ru"))
+        return doc.buttons(("English" + (" ✓" if lang == "en" else ""), "lg:en"),
+                           ("Русский" + (" ✓" if lang == "ru" else ""), "lg:ru"))
 
     # --- feedback ---------------------------------------------------------------------------------
 

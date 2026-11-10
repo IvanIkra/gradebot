@@ -14,14 +14,14 @@ from .access import ALPHABET, CODE_LENGTH, Access, NewUser, normalise
 from .dialog import Dialogs
 from .grades import Grades
 from .groups import Groups
-from .i18n import guess, tr
+from .i18n import days, guess, tr
 from .llm.budget import Budget
 from .news import OwnerNews
 from .notices import ReadNotices
 from .owner import OwnerCommands
 from .poller import Poller
 from .rich import Doc, Html, b, code, join
-from .sheets import Sheets
+from .sheets import GOOGLE_SHEET, Sheets
 from .store import Store
 from .telegram import BotApi, TelegramError
 from .users import UserCommands, group_buttons
@@ -121,7 +121,10 @@ class Bot(OwnerCommands, UserCommands, ReadNotices, OwnerNews, Dialogs):
 
     @staticmethod
     def ended(lang: str) -> Doc:
-        return Doc().p(tr(lang, "Your access to the bot has ended.", "Доступ к боту закончился.")).buttons(
+        return Doc().p(tr(lang, "Your access to the bot has ended: grades don't come any more. Your data is kept, "
+                                "so once the owner prolongs it, everything goes on as before.",
+                          "Доступ к боту закончился: оценки больше не приходят. Данные сохранены — если владелец "
+                          "продлит доступ, всё продолжится как было.")).buttons(
             (tr(lang, "Ask to prolong", "Попросить продлить"), "pr", "primary"))
 
     async def watch_access(self) -> None:
@@ -158,7 +161,8 @@ class Bot(OwnerCommands, UserCommands, ReadNotices, OwnerNews, Dialogs):
             self.access.told(user["tg_id"], 1)
             lang = user["lang"]
             await self.tell(user, Doc().p(tr(lang, "Your access to the bot ends ", "Доступ к боту закончится "),
-                                          b(self.when(user["expires_at"])), ".")
+                                          b(self.when(user["expires_at"])), ". ",
+                                          tr(lang, "The owner may prolong it.", "Владелец может его продлить."))
                             .buttons((tr(lang, "Ask to prolong", "Попросить продлить"), "pr")))
         for user in ended:
             self.access.told(user["tg_id"], 2)
@@ -187,7 +191,7 @@ class Bot(OwnerCommands, UserCommands, ReadNotices, OwnerNews, Dialogs):
 
     @staticmethod
     def prolong_buttons(user: dict, lang: str) -> list[tuple]:
-        return [*[(tr(lang, f"+{days} days", f"+{days} дн."), f"ax:{user['tg_id']}.{days}") for days in PROLONG],
+        return [*[("+" + days(lang, n), f"ax:{user['tg_id']}.{n}") for n in PROLONG],
                 (tr(lang, "For good", "Бессрочно"), f"ax:{user['tg_id']}.0", "success")]
 
     # --- updates -------------------------------------------------------------------------------
@@ -220,6 +224,8 @@ class Bot(OwnerCommands, UserCommands, ReadNotices, OwnerNews, Dialogs):
             if self.access.expired(user) and cmd != "/stop":  # leaving works after the end too
                 await self.api.send(chat, self.ended(user["lang"]))
                 return
+            if not cmd and GOOGLE_SHEET.match(arg) and getattr(self.waiting(chat), "step", "link") != "link":
+                cmd = "/sheet"  # a link pasted while another question waits: follow it, the question goes
             if cmd:
                 self.asks.pop(chat, None)
             elif await self.answer(chat, arg):
@@ -271,6 +277,7 @@ class Bot(OwnerCommands, UserCommands, ReadNotices, OwnerNews, Dialogs):
                     self.groups.fix(tg_id)
                 user = self.access.user(tg_id)
                 await self.api.send(chat, self.welcome(lang, group, len(followed), user["expires_at"]))
+                await self.cmd_name(chat, user, "")  # the full name next: without it no row is found
                 note = f" «{invite['note']}»" if invite["note"] else ""
                 owner = self.owner_lang
                 count = f" ({invite['used']}/{invite['uses'] or '∞'})" if invite["uses"] != 1 else ""
@@ -310,7 +317,5 @@ class Bot(OwnerCommands, UserCommands, ReadNotices, OwnerNews, Dialogs):
                            "with /group.",
                      "В какой ты группе? Я подпишу тебя на её общие таблицы. Сменить группу можно потом: /group."))
             group_buttons(doc, groups, "gj", lang)
-        return doc.p(tr(lang, "First, your full name exactly as the sheets have it: ",
-                        "Сначала ФИО — точно так, как в таблицах: "),
-                     code(tr(lang, "/name Surname Name", "/name Фамилия Имя")))
+        return doc
 

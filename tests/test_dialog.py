@@ -54,7 +54,7 @@ async def test_name_asked_for(bot, api, access):
     await bot.handle(message(OWNER, "/invite Петя"))
     await bot.handle(message(PETR, f"/start {invite_code(api.last(OWNER)['text'])}"))
     await bot.handle(message(PETR, "/name"))
-    assert "ФИО не указано" in api.last(PETR)["text"] and "Напиши его точно так" in api.last(PETR)["text"]
+    assert "Как ты записан в таблицах?" in api.last(PETR)["text"] and "фамилию и имя" in api.last(PETR)["text"]
     await bot.handle(message(PETR, "петров"))
     assert "не похоже на ФИО" in api.last(PETR)["text"]
     await bot.handle(message(PETR, "Петров Пётр"))
@@ -72,7 +72,7 @@ async def test_groups_and_their_sheets_by_buttons(bot, api, sheets):
     await bot.handle(message(OWNER, CALC))
     assert "Название из Google" in buttons(api.last(OWNER))
     await bot.handle(message(OWNER, "Матан"))
-    assert "Общая таблица <b>Матан</b> группы <b>A1</b>" in api.last(OWNER)["text"]
+    assert "<b>Матан</b> — общая таблица группы <b>A1</b>" in api.last(OWNER)["text"]
 
     await bot.handle(message(OWNER, "/groups"))
     await bot.handle(callback(OWNER, buttons(api.last(OWNER))["Переименовать A1"]))

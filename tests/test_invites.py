@@ -68,9 +68,9 @@ async def test_invite_help(bot, api):
 
 async def test_access_for_a_while(bot, api, access, sheets, clock):
     await bot.handle(message(OWNER, "/invite +30д Петя"))
-    assert "доступ на 30 дн." in api.last(OWNER)["text"]
+    assert "доступ на 30 дней" in api.last(OWNER)["text"]
     await bot.handle(message(PETR, f"/start {invite_code(api.last(OWNER)['text'])}"))
-    assert "Доступ открыт до <b>09.12 15:00</b>" in api.last(PETR)["text"]
+    assert "Доступ открыт до <b>09.12 15:00</b>" in api.sent(PETR)[-2]["text"]
     assert "доступ до 09.12 15:00" in api.last(OWNER)["text"]
     await bot.handle(message(PETR, "/name Петров Пётр"))
     sheets.follow(PETR, "https://docs.google.com/spreadsheets/d/1CalcExampleSheetId_0123456789abc")
@@ -99,7 +99,7 @@ async def test_access_for_a_while(bot, api, access, sheets, clock):
     assert api.calls[-1][1]["text"] == "Отправлено владельцу"
     request = api.last(OWNER)
     assert "просьба продлить доступ, он закончился 09.12 15:00" in request["text"]
-    assert buttons(request) == {"+7 дн.": f"ax:{PETR}.7", "+30 дн.": f"ax:{PETR}.30", "+90 дн.": f"ax:{PETR}.90",
+    assert buttons(request) == {"+7 дней": f"ax:{PETR}.7", "+30 дней": f"ax:{PETR}.30", "+90 дней": f"ax:{PETR}.90",
                                 "Бессрочно": f"ax:{PETR}.0", "Удалить": f"du:{PETR}"}
     await bot.handle(callback(PETR, "pr"))
     assert api.calls[-1][1]["text"] == "Просьба уже отправлена" and api.last(OWNER) == request
@@ -111,7 +111,7 @@ async def test_access_for_a_while(bot, api, access, sheets, clock):
     await bot.handle(message(OWNER, "/users"))
     assert "09.12 15:00 (закончился)" in api.last(OWNER)["text"]
 
-    await bot.handle(callback(OWNER, buttons(request)["+7 дн."]))  # from the end, or from now when it has ended
+    await bot.handle(callback(OWNER, buttons(request)["+7 дней"]))  # from the end, or from now when it has ended
     assert access.user(PETR)["expires_at"] == "2026-12-16T13:00:00+00:00"
     assert "Владелец продлил доступ: <b>до 16.12 16:00</b>" in api.last(PETR)["text"]
     assert len(sheets.to_read()) == 1

@@ -14,7 +14,7 @@ import asyncio
 import logging
 
 from . import poller, profile
-from .cards import collapse, news_messages
+from .cards import all_grades_button, collapse, news_messages
 from .i18n import tr
 from .llm.budget import Level
 from .poller import SheetRead, UserRead
@@ -82,7 +82,7 @@ class ReadNotices:
                     [], [[sheet_name(read.sheet), outcome(read, one, lang)] for read, one in lines])
                 if any(one is not None and one.first and one.tabs for _, one in lines):
                     doc.p(tr(lang, "New and changed grades will come here.",
-                             "Новые и изменённые оценки будут приходить сюда."))
+                             "Новые и изменённые оценки будут приходить сюда.")).buttons(all_grades_button(lang))
                 await self.tell(user, doc)
         await self.send_grades()
 
