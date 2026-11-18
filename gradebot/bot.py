@@ -14,6 +14,7 @@ from .access import ALPHABET, CODE_LENGTH, Access, NewUser, normalise
 from .admins import GroupAdmins
 from .dialog import Dialogs
 from .formulas import FormulaCommands
+from .goals import GoalCommands
 from .grades import Grades
 from .groups import Groups
 from .i18n import days, guess, tr
@@ -52,8 +53,8 @@ def full_name(user: dict) -> str:
     return " ".join(filter(None, (user.get("first_name"), user.get("last_name")))) or str(user["id"])
 
 
-class Bot(GroupAdmins, OwnerCommands, UserCommands, SubjectCommands, FormulaCommands, ReadNotices, OwnerNews,
-          Dialogs):
+class Bot(GroupAdmins, OwnerCommands, UserCommands, SubjectCommands, FormulaCommands, GoalCommands, ReadNotices,
+          OwnerNews, Dialogs):
     def __init__(self, api: BotApi, store: Store, access: Access, sheets: Sheets, owner_id: int, zone: dt.tzinfo,
                  username: str = "", now: Callable[[], dt.datetime] = clock.now_utc):
         self.api, self.store, self.access, self.sheets = api, store, access, sheets

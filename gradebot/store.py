@@ -101,6 +101,12 @@ create table if not exists subject_formulas (   -- a user's own formula of a sub
     tree text not null,
     primary key (tg_id, subject)
 );
+create table if not exists subject_goals (  -- the grade a user aims at in a subject
+    tg_id integer not null references users(tg_id) on delete cascade,
+    subject integer not null references subjects(id) on delete cascade,
+    goal integer not null,          -- 4 to 10
+    primary key (tg_id, subject)
+);
 create table if not exists sheet_requests (   -- sheets new to the bot that a user asked for, waiting for the owner
     id integer primary key,
     tg_id integer not null references users(tg_id) on delete cascade,

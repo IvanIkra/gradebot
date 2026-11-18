@@ -46,6 +46,7 @@ class Unit:
     tag: str                    # the course its hashtag is made of
     sheets: list[dict] = field(default_factory=list)
     subject: dict | None = None
+    note: str = ""              # under the section: the outlook of the user's goal (goals.py)
 
     @classmethod
     def of(cls, sheet: dict) -> "Unit":
@@ -142,12 +143,29 @@ class Subjects:
         return self.own_formula(tg_id, sid) or self.subject_formula(sid)
 
     def plan(self, sid: int) -> list[dict]:
-        """Every work of the subject's sheets, graded or not yet, in the subject's order, with the sheet's name."""
+        """Every work of the subject's sheets, graded or not yet, in the subject's order, with the sheet's name. The
+        key is the sheet's id and the work's key (`subject_key`): two sheets may have a tab and a column alike."""
         rows = self.db.execute(
-            "select w.*, coalesce(nullif(s.course, ''), s.title, '') sheet_name from subject_sheets j "
-            "join sheet_works w on w.sheet = j.sheet join sheets s on s.id = j.sheet where j.subject = ? "
-            "order by j.rowid, w.position", (sid,))
+            "select w.sheet, w.sheet || ':' || w.key key, w.tab, w.label, w.label_ru, w.max, w.position, "
+            "coalesce(nullif(s.course, ''), s.title, '') sheet_name "
+            "from subject_sheets j join sheet_works w on w.sheet = j.sheet join sheets s on s.id = j.sheet "
+            "where j.subject = ? order by j.rowid, w.position", (sid,))
         return [dict(row) for row in rows]
+
+    # --- goals ------------------------------------------------------------------------------------
+
+    def goal(self, tg_id: int, sid: int) -> int | None:
+        row = self.db.execute("select goal from subject_goals where tg_id = ? and subject = ?",
+                              (tg_id, sid)).fetchone()
+        return row["goal"] if row else None
+
+    def set_goal(self, tg_id: int, sid: int, goal: int | None) -> None:
+        with self.db:
+            if goal is None:
+                self.db.execute("delete from subject_goals where tg_id = ? and subject = ?", (tg_id, sid))
+            else:
+                self.db.execute("insert into subject_goals(tg_id, subject, goal) values(?, ?, ?) "
+                                "on conflict(tg_id, subject) do update set goal = excluded.goal", (tg_id, sid, goal))
 
     def units(self, user: dict, sheets: list[dict]) -> list[Unit]:
         """The user's followed sheets (in their order) as sections: their own subjects first, then their group's."""
@@ -173,6 +191,11 @@ class Subjects:
 
 
 # --- /subjects -------------------------------------------------------------------------------------
+
+
+def subject_key(item: dict) -> str:
+    """A grade's key within a subject (Subjects.plan): its sheet's id and its key in the sheet."""
+    return f"{item['sheet']}:{item['key']}"
 
 
 def scope_of(subject: dict) -> str:

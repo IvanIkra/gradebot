@@ -11,7 +11,7 @@ import re
 
 from .i18n import tr
 from .layout import label
-from .rich import Doc, b, join, link, mark
+from .rich import Doc, b, i, join, link, mark
 from .sheets import course_of
 from .sheets import name as sheet_name
 from .subjects import Unit
@@ -98,7 +98,8 @@ def collapse(events: list[dict]) -> tuple[list[dict], list[int]]:
 
 
 def news_section(unit: Unit, rows: list[dict], lang: str) -> Doc:
-    return works_table(sheet_links(Doc().h(*heading(unit)), unit), rows, lang, with_previous=True)
+    doc = works_table(sheet_links(Doc().h(*heading(unit)), unit), rows, lang, with_previous=True)
+    return doc.p(i(unit.note)) if unit.note else doc
 
 
 def all_grades_button(lang: str) -> tuple:
@@ -134,11 +135,14 @@ def news_messages(sections: list[tuple[Unit, list[dict]]], lang: str) -> list[tu
 
 def grades_section(unit: Unit, items: list[dict], lang: str, problems: list[str], table: bool = True) -> Doc:
     """A unit in /grades: details headed «Calc · 12 grades · 2 new», open when some are new; a subject's sheets
-    linked, the table of its grades and a «Report a mistake» button for each sheet's layout inside."""
+    linked, its outlook, the table of its grades, a «Report a mistake» button for each sheet's layout and a
+    subject's «Goal» and «Formula» inside."""
     new = sum(item["new"] for item in items)
     summary = " · ".join([unit.name, tr(lang, f"{len(items)} grades", f"оценок: {len(items)}"),
                           *([tr(lang, f"{new} new", f"новых: {new}")] if new else [])])
     inner = sheet_links(Doc(), unit)
+    if unit.note:
+        inner.p(i(unit.note))
     for problem in problems:
         inner.p(problem)
     if items and table:
@@ -152,4 +156,7 @@ def grades_section(unit: Unit, items: list[dict], lang: str, problems: list[str]
             if sheet["id"] in graded:
                 inner.buttons((report if len(graded) == 1 else f"{report}: {sheet_name(sheet)}",
                                f"wr:{sheet['id']}", "link"))
+    if unit.subject is not None:
+        sid = unit.subject["id"]
+        inner.buttons((tr(lang, "Goal", "Цель"), f"gl:s.{sid}"), (tr(lang, "Formula", "Формула"), f"fm:s.{sid}"))
     return Doc().details(summary, inner, open_=bool(new))

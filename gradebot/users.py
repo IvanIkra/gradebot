@@ -4,7 +4,8 @@ Callbacks: `grades` sends /grades, `rf` redraws it in place, `wr:<sheet>` compla
 `ck:<sheet>` reads a sheet now, `us:<sheet>` unfollows it, `cr:<request>` cancels a request for a sheet waiting for
 the owner, `gp:<group>` moves the user to a group (0: none) from /group, `gj:<group>` from the first message,
 `add` asks for a sheet to follow, `qt:<hours|off>` sets quiet hours, `lg:<en|ru>` the language, `stop` and `stop!`
-cancel and confirm /stop; `sj:…` are /subjects' (subjects.py), `fm:…` /formula's (formulas.py).
+cancel and confirm /stop; `sj:…` are /subjects' (subjects.py), `fm:…` /formula's (formulas.py), `gl:…`
+/goal's (goals.py).
 """
 
 import datetime as dt
@@ -47,7 +48,7 @@ class UserCommands:
                     "/sheets": self.cmd_sheets, "/group": self.cmd_group, "/quiet": self.cmd_quiet,
                     "/lang": self.cmd_lang, "/feedback": self.cmd_feedback, "/stop": self.cmd_stop,
                     "/subjects": lambda chat, user, arg: self.cmd_subjects(chat, user, arg, lang),
-                    "/formula": self.cmd_formula}
+                    "/formula": self.cmd_formula, "/goal": self.cmd_goal}
         if await self.admin_command(chat, user, cmd, arg):
             return
         if cmd in handlers:
@@ -71,6 +72,8 @@ class UserCommands:
             return await self.subjects_callback(chat, message_id, user, arg, lang)
         if kind == "fm":
             return await self.formula_callback(chat, message_id, user, arg, lang)
+        if kind == "gl":
+            return await self.goal_callback(chat, message_id, user, arg, lang)
         if kind == "add":
             await self.cmd_sheet(chat, user, "")
             return None
@@ -133,6 +136,8 @@ class UserCommands:
                                  "предметы: несколько таблиц одного курса как одна")],
                 ["/formula", tr(lang, "a subject's grade formula, as the teacher wrote it",
                                 "формула оценки предмета, как у преподавателя")],
+                ["/goal", tr(lang, "the grade you aim at: what is needed for it",
+                             "к какой оценке идёшь: сколько для неё нужно")],
                 *([["/group", tr(lang, "your group: you follow its shared sheets", "твоя группа и её общие таблицы")]]
                   if self.groups.all() else []),
                 ["/quiet", tr(lang, "quiet hours", "тихие часы")],
@@ -407,7 +412,7 @@ class UserCommands:
         if not sheets:
             return Doc().p(self.no_sheets(lang)).buttons(self.add_button(lang))
         found = []
-        for unit in self.subjects.units(user, sheets):
+        for unit in self.with_notes(user, self.subjects.units(user, sheets)):
             items, problems = [], []
             for s in unit.sheets:
                 items += self.grades.items(user["tg_id"], s["id"])

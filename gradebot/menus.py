@@ -3,11 +3,13 @@
 USER_COMMANDS = {
     "en": [("grades", "your grades"), ("sheets", "your sheets"), ("sheet", "follow a Google Sheet"),
            ("subjects", "subjects: sheets joined"), ("formula", "a subject's grade formula"),
+           ("goal", "the grade you aim at"),
            ("group", "your group"), ("name", "your full name"),
            ("quiet", "quiet hours"), ("lang", "language"), ("feedback", "write to the owner"), ("help", "commands"),
            ("stop", "erase your data and leave")],
     "ru": [("grades", "твои оценки"), ("sheets", "твои таблицы"), ("sheet", "подписаться на таблицу"),
            ("subjects", "предметы: таблицы вместе"), ("formula", "формула оценки предмета"),
+           ("goal", "к какой оценке идёшь"),
            ("group", "твоя группа"), ("name", "ФИО"),
            ("quiet", "тихие часы"), ("lang", "язык"), ("feedback", "написать владельцу"), ("help", "команды"),
            ("stop", "удалить свои данные и уйти")],

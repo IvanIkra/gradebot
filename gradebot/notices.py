@@ -110,6 +110,7 @@ class ReadNotices:
                         rows += sheet_rows
                 if rows:
                     sections.append((unit, rows))
+            self.with_notes(user, [unit for unit, _ in sections], goal_only=True)
             silent = profile.is_quiet(user, self.now(), self.zone)
             for doc, ids in news_messages(sections, user["lang"]):
                 msg_id = await self.tell(user, doc, silent=silent)
