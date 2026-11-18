@@ -92,3 +92,23 @@ def test_grades_go_with_the_subscription_and_the_user(grades, two, sheets, acces
     sheets.unfollow(ivan, sheet)
     access.delete(anna)
     assert grades.db.execute("select count(*) from grade_items").fetchone()[0] == 0
+
+
+def test_a_zero_after_a_real_grade_is_kept(grades, two, clock):
+    sheet, ivan, _ = two
+    grades.record(ivan, sheet, [item("k1", "HW", 8)], 1)
+    clock.advance(hours=1)
+    grades.record(ivan, sheet, [item("k1", "HW", 0)], 1)    # lowered to a real zero: news
+    assert [(e["value"], e["previous"]) for e in grades.waiting(ivan)] == [(0, 8)]
+    clock.advance(hours=1)
+    grades.record(ivan, sheet, [item("k1", "HW", 0)], 1)    # the next read: still there, no news
+    assert [i["value"] for i in grades.items(ivan, sheet)] == [0] and len(grades.waiting(ivan)) == 1
+
+
+def test_a_moved_zero_keeps_its_grade(grades, two, clock):
+    sheet, ivan, _ = two
+    grades.record(ivan, sheet, [item("T|B|HW", "HW", 8, header="HW")], 1)
+    grades.record(ivan, sheet, [item("T|B|HW", "HW", 0, header="HW")], 1)
+    clock.advance(hours=1)
+    grades.record(ivan, sheet, [item("T|C|HW", "HW", 0, header="HW")], 1)   # a column inserted before it
+    assert [(i["key"], i["value"]) for i in grades.items(ivan, sheet)] == [("T|C|HW", 0)]

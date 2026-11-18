@@ -51,8 +51,8 @@ class Grades:
                     moved.add(old["key"])
                     db.execute("update grade_events set key = ? where tg_id = ? and sheet = ? and key = ?",
                                (item.key, tg_id, sheet, old["key"]))
-                if item.value == 0 and not item.bonus and (old is None or old["value"] == 0):
-                    continue  # a placeholder for "not graded yet"
+                if item.value == 0 and not item.bonus and old is None:
+                    continue  # a placeholder for "not graded yet"; a zero after a real grade is kept
                 seen.add(item.key)
                 db.execute(
                     "insert into grade_items(tg_id, sheet, key, tab, header, label, label_ru, value, raw, max, bonus, "
