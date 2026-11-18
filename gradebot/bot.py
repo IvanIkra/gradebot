@@ -11,12 +11,13 @@ from collections.abc import Callable
 
 from . import clock
 from .access import ALPHABET, CODE_LENGTH, Access, NewUser, normalise
+from .admins import GroupAdmins
 from .dialog import Dialogs
 from .grades import Grades
 from .groups import Groups
 from .i18n import days, guess, tr
 from .llm.budget import Budget
-from .news import OwnerNews
+from .news import OwnerNews, admin_news
 from .notices import ReadNotices
 from .owner import OwnerCommands
 from .poller import Poller
@@ -49,7 +50,7 @@ def full_name(user: dict) -> str:
     return " ".join(filter(None, (user.get("first_name"), user.get("last_name")))) or str(user["id"])
 
 
-class Bot(OwnerCommands, UserCommands, ReadNotices, OwnerNews, Dialogs):
+class Bot(GroupAdmins, OwnerCommands, UserCommands, ReadNotices, OwnerNews, Dialogs):
     def __init__(self, api: BotApi, store: Store, access: Access, sheets: Sheets, owner_id: int, zone: dt.tzinfo,
                  username: str = "", now: Callable[[], dt.datetime] = clock.now_utc):
         self.api, self.store, self.access, self.sheets = api, store, access, sheets
@@ -122,6 +123,9 @@ class Bot(OwnerCommands, UserCommands, ReadNotices, OwnerNews, Dialogs):
                                                  "again.",
                                            ": бот заблокирован, таблицы на паузе до нового сообщения боту."),
                         buttons=(self.delete_button(user, lang),))
+        await self.group_news(user["grp"], user["tg_id"], lambda lang: [
+            self.who(user), tr(lang, " blocked the bot: grades don't reach them", ": бот заблокирован, оценки не "
+                                                                                "доходят")])
 
     def delete_button(self, user: dict, lang: str) -> tuple:
         return (tr(lang, "Delete ", "Удалить ") + user["tg_name"], f"du:{user['tg_id']}", "danger")
@@ -173,9 +177,14 @@ class Bot(OwnerCommands, UserCommands, ReadNotices, OwnerNews, Dialogs):
                                           b(self.when(user["expires_at"], lang)), ". ",
                                           tr(lang, "The owner may prolong it.", "Владелец может его продлить."))
                             .buttons((tr(lang, "Ask to prolong", "Попросить продлить"), "pr")))
+            await self.group_news(user["grp"], user["tg_id"], lambda lang, user=user: [
+                self.who(user), tr(lang, ": access ends ", ": доступ закончится "),
+                self.when(user["expires_at"], lang)])
         for user in ended:
             self.access.told(user["tg_id"], 2)
             await self.tell(user, self.ended(user["lang"]))
+            await self.group_news(user["grp"], user["tg_id"], lambda lang, user=user: [
+                self.who(user), tr(lang, ": access ended", ": доступ закончился")])
 
     async def ask_prolong(self, user: dict) -> str:
         """«Ask to prolong»: the owner hears it once until the access is prolonged."""
@@ -228,6 +237,7 @@ class Bot(OwnerCommands, UserCommands, ReadNotices, OwnerNews, Dialogs):
             return
         user = self.access.user(sender["id"])
         if user is not None:
+            self.close_news(admin_news(user["tg_id"]))
             if (full_name(sender), sender.get("username")) != (user["tg_name"], user["username"]) or user["paused"]:
                 self.access.update_profile(sender["id"], full_name(sender), sender.get("username"))
             if self.access.expired(user) and cmd != "/stop":  # leaving works after the end too
@@ -258,6 +268,7 @@ class Bot(OwnerCommands, UserCommands, ReadNotices, OwnerNews, Dialogs):
                 where = None if self.is_digest(message_id) else message_id  # a digest stays as it is
                 note = await self.owner_callback(chat, where, kind, arg, self.owner_lang)
             elif (user := self.access.user(sender["id"])) is not None:
+                self.close_news(admin_news(user["tg_id"]))
                 if kind == "pr":
                     note = await self.ask_prolong(user)
                 elif self.access.expired(user) and kind not in ("stop", "stop!"):
@@ -285,7 +296,11 @@ class Bot(OwnerCommands, UserCommands, ReadNotices, OwnerNews, Dialogs):
                 if group:
                     self.groups.fix(tg_id)
                 user = self.access.user(tg_id)
-                await self.api.send(chat, self.welcome(lang, group, len(followed), user["expires_at"]))
+                welcome = self.welcome(lang, group, len(followed), user["expires_at"])
+                if self.admin_group(user) is not None:
+                    welcome.p(tr(lang, "You are the group's admin: what you can do is in /help.",
+                                 "Ты админ группы: что ты можешь — в /help."))
+                await self.api.send(chat, welcome)
                 if group or not self.groups.all():  # else the full name is asked once the group is picked
                     await self.cmd_name(chat, user, "")
                 note = f" «{invite['note']}»" if invite["note"] else ""
@@ -296,6 +311,12 @@ class Bot(OwnerCommands, UserCommands, ReadNotices, OwnerNews, Dialogs):
                                 *([tr(owner, ", access until ", ", доступ до "), self.when(user["expires_at"], owner)]
                                   if user["expires_at"] else []),
                                 buttons=(self.delete_button(user, owner),))
+                await self.group_news(user["grp"], tg_id, lambda lang: [
+                    self.who(user), tr(lang, " came in", ": вход по коду"), note,
+                    *([tr(lang, ", access until ", ", доступ до "), self.when(user["expires_at"], lang)]
+                      if user["expires_at"] else [])])
+                if self.admin_group(user) is not None:
+                    await self.admin_menu(user)
                 return
             if self.access.locked(tg_id):
                 return

@@ -70,6 +70,7 @@ class Groups:
     def delete(self, gid: int) -> bool:
         """Its users are in no group then and keep their sheets; codes that carried it carry none."""
         with self.db:
+            self.db.execute("update users set rank = min(rank, 1) where grp = ?", (gid,))  # no group to run
             cur = self.db.execute("delete from groups where id = ?", (gid,))
         self.sheets.drop_orphans()
         return cur.rowcount == 1
@@ -131,7 +132,10 @@ class Groups:
                     "delete from subscriptions where tg_id = ? and sheet in (select sheet from group_sheets "
                     "where grp = ?) and sheet not in (select sheet from group_sheets where grp = ?)",
                     (tg_id, row["grp"], gid or 0)).rowcount
-            self.db.execute("update users set grp = ? where tg_id = ?", (gid, tg_id))
+            # an admin runs the group they are in: moved to another one they are only trusted (the first group, from
+            # the code, keeps the rank the code gave)
+            self.db.execute("update users set rank = case when grp is null then rank else min(rank, 1) end, grp = ? "
+                            "where tg_id = ?", (gid, tg_id))
             new = [r["sheet"] for r in self.db.execute(
                 "select sheet from group_sheets where grp = ? and sheet not in "
                 "(select sheet from subscriptions where tg_id = ?) order by sheet", (gid or 0, tg_id))]

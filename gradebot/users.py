@@ -11,6 +11,7 @@ import datetime as dt
 
 from . import clock, profile
 from .access import TRUSTED
+from .admins import ADMIN_KINDS
 from .cards import grades_section
 from .dialog import Step, asks_hint, link_step
 from .groups import GroupError
@@ -45,6 +46,8 @@ class UserCommands:
         handlers = {"/grades": self.cmd_grades, "/name": self.cmd_name, "/sheet": self.cmd_sheet,
                     "/sheets": self.cmd_sheets, "/group": self.cmd_group, "/quiet": self.cmd_quiet,
                     "/lang": self.cmd_lang, "/feedback": self.cmd_feedback, "/stop": self.cmd_stop}
+        if await self.admin_command(chat, user, cmd, arg):
+            return
         if cmd in handlers:
             await handlers[cmd](chat, user, arg)
         elif cmd == "/start":
@@ -52,10 +55,13 @@ class UserCommands:
                                          "Ты уже в списке. Команды — в /help."))
         else:
             await self.api.send(chat, Doc().p(i(tr(lang, "That's not a command. Here is what I can do:",
-                                                   "Это не команда. Вот что я умею:"))).extend(self.user_help(lang)))
+                                                   "Это не команда. Вот что я умею:")))
+                                .extend(self.user_help(lang, user)))
 
     async def user_callback(self, chat: int, message_id: int, user: dict, kind: str, arg: str) -> str | None:
         lang = user["lang"]
+        if kind in ADMIN_KINDS:
+            return await self.admin_callback(chat, message_id, user, kind, arg)
         if kind == "grades":
             await self.cmd_grades(chat, user, "")
             return None
@@ -103,11 +109,13 @@ class UserCommands:
                 "Твои данные удалены. Чтобы вернуться, нужен новый код приглашения."))
             left = tr(self.owner_lang, "Left the bot with /stop: ", "Выход из бота через /stop: ")
             await self.news(left, self.who(user))
+            await self.group_news(user["grp"], user["tg_id"], lambda lang: [
+                self.who(user), tr(lang, " left the bot with /stop", ": вышел(а) из бота через /stop")])
         elif kind == "stop":
             await self.api.edit(chat, message_id, tr(lang, "Staying, nothing erased.", "Остаёмся, ничего не удалено."))
         return None
 
-    def user_help(self, lang: str) -> Doc:
+    def user_help(self, lang: str, user: dict | None = None) -> Doc:
         rows = [["/grades", tr(lang, "your grades, the new ones marked", "твои оценки, новые отмечены")],
                 ["/name " + tr(lang, "Surname Name", "Фамилия Имя"),
                  tr(lang, "your full name as the sheets have it", "ФИО, как в таблицах")],
@@ -123,7 +131,10 @@ class UserCommands:
                  tr(lang, "write to the bot's owner: a question, a bug, an idea", "написать владельцу бота: вопрос, "
                                                                                     "ошибка, идея")],
                 ["/stop", tr(lang, "erase your data and leave", "удалить свои данные и уйти")]]
-        return Doc().h(tr(lang, "Commands", "Команды")).table([], rows).p(asks_hint(lang))
+        doc = Doc().h(tr(lang, "Commands", "Команды")).table([], rows)
+        if self.admin_group(user) is not None:
+            doc.extend(self.admin_help(user))
+        return doc.p(asks_hint(lang))
 
     # --- the full name ---------------------------------------------------------------------------
 
@@ -173,6 +184,8 @@ class UserCommands:
         await self.news(self.who(user), tr(owner, " set the full name ", ": ФИО "), b(student), *before,
                         buttons=((tr(owner, "Reset the name of ", "Сбросить ФИО: ") + user["tg_name"],
                                   f"nr:{user['tg_id']}", "danger"),))
+        await self.group_news(user["grp"], user["tg_id"], lambda lang: [
+            self.who(user), tr(lang, " set the full name ", ": ФИО "), b(student)])
         self.read_soon(user["tg_id"], [sheet["id"] for sheet in followed])
 
     # --- sheets ----------------------------------------------------------------------------------
@@ -240,17 +253,26 @@ class UserCommands:
             await self.api.send(chat, tr(lang, "This sheet is already waiting for the owner's approval.",
                                          "Эта таблица уже ждёт одобрения владельца."))
             return
+        admins = self.access.admins(user["grp"])
         await self.api.send(chat, Doc().p(
+            tr(lang, "The bot doesn't read this sheet yet, so the owner or your group's admin approves it first. "
+                     "I'll write when they do.",
+               "Бот ещё не читает эту таблицу, поэтому сначала её одобрит владелец или админ группы. Напишу, когда "
+               "ответят.") if admins else
             tr(lang, "The bot doesn't read this sheet yet, so the owner approves it first. I'll write when they do.",
                "Бот ещё не читает эту таблицу, поэтому сначала её одобрит владелец. Напишу, когда он ответит.")))
-        owner = self.owner_lang
-        await self.tell_owner(
-            Doc().p(self.who(user), tr(owner, " asks to follow a sheet the bot doesn't read yet: ",
-                                       ": просьба подписать на таблицу, которую бот ещё не читает: "),
-                    link(request["url"], request["url"]),
-                    *([tr(owner, ", short name ", ", имя "), b(request["course"])] if request["course"] else []))
-            .buttons((tr(owner, "Approve", "Одобрить"), f"sa:{request['id']}", "success"),
-                     (tr(owner, "Decline", "Отклонить"), f"sd:{request['id']}", "danger")))
+
+        def asking(lang: str) -> Doc:
+            return (Doc().p(self.who(user), tr(lang, " asks to follow a sheet the bot doesn't read yet: ",
+                                               ": просьба подписать на таблицу, которую бот ещё не читает: "),
+                            link(request["url"], request["url"]),
+                            *([tr(lang, ", short name ", ", имя "), b(request["course"])] if request["course"] else []))
+                    .buttons((tr(lang, "Approve", "Одобрить"), f"sa:{request['id']}", "success"),
+                             (tr(lang, "Decline", "Отклонить"), f"sd:{request['id']}", "danger")))
+
+        await self.tell_owner(asking(self.owner_lang))
+        for admin in admins:
+            await self.tell(admin, asking(admin["lang"]))
 
     # --- the group -------------------------------------------------------------------------------
 
@@ -302,6 +324,7 @@ class UserCommands:
                 news = [tr(owner, " is in the group ", ": теперь в группе "), b(group["name"]),
                         *([tr(owner, " (was ", " (была "), before["name"], ")"] if before else [])]
             await self.news(self.who(user), *news)
+            await self.moved_news(user, before, group)
         if user["student"] and followed:
             self.read_soon(user["tg_id"], followed)
         return tr(lang, "Saved", "Сохранено")

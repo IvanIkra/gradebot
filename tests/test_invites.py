@@ -20,7 +20,7 @@ def args(text: str, groups: dict | None = None) -> dict:
 def test_invite_args():
     found = args("A1 x5 3д +30d Петя  с семинара", {"a1": {"id": 7}})
     assert found == {"group": {"id": 7}, "uses": 5, "lifetime": dt.timedelta(days=3), "access_days": 30,
-                     "access_until": None, "note": "Петя с семинара"}
+                     "access_until": None, "rank": 0, "note": "Петя с семинара"}
     assert args("x* 12h")["uses"] == 0 and args("x* 12h")["lifetime"] == dt.timedelta(hours=12)
     assert args("х3")["uses"] == 3                     # a Cyrillic х
     assert args("+31.12")["access_until"] == dt.datetime(2026, 12, 31, 23, 59, tzinfo=ZONE)

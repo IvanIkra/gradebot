@@ -14,6 +14,7 @@ from .layout import Layouts
 from .llm.budget import Budget
 from .llm.client import Haiku
 from .llm.journal import Journal
+from .menus import OWNER_COMMANDS, USER_COMMANDS
 from .poller import Poller
 from .sheets import Sheets
 from .store import Store
@@ -22,29 +23,6 @@ from .telegram import BotApi, TelegramError
 log = logging.getLogger(__name__)
 
 OFFSET = "updates.offset"   # kv: the next update to ask for, so a restart neither loses nor repeats updates
-
-USER_COMMANDS = {
-    "en": [("grades", "your grades"), ("sheets", "your sheets"), ("sheet", "follow a Google Sheet"),
-           ("group", "your group"), ("name", "your full name"),
-           ("quiet", "quiet hours"), ("lang", "language"), ("feedback", "write to the owner"), ("help", "commands"),
-           ("stop", "erase your data and leave")],
-    "ru": [("grades", "твои оценки"), ("sheets", "твои таблицы"), ("sheet", "подписаться на таблицу"),
-           ("group", "твоя группа"), ("name", "ФИО"),
-           ("quiet", "тихие часы"), ("lang", "язык"), ("feedback", "написать владельцу"), ("help", "команды"),
-           ("stop", "удалить свои данные и уйти")],
-}
-OWNER_COMMANDS = {
-    "en": [("invite", "an invite code"), ("codes", "open codes"), ("users", "users"),
-           ("groups", "groups"), ("groupsheet", "the groups' shared sheets"), ("rename", "a sheet's short name"),
-           ("relayout", "lay a sheet out again"), ("status", "sheets, users, Haiku"),
-           ("interval", "how often the sheets are read"), ("help", "commands")],
-    "ru": [("invite", "код приглашения"), ("codes", "действующие коды"), ("users", "пользователи"),
-           ("groups", "группы"), ("groupsheet", "общие таблицы групп"), ("rename", "короткое имя таблицы"),
-           ("relayout", "разметить таблицу заново"),
-           ("status", "таблицы, пользователи, Haiku"), ("interval", "как часто читать таблицы"),
-           ("help", "команды")],
-}
-
 
 # What a stranger sees in the empty chat before /start (at most 512 characters), and on the bot's profile (120).
 DESCRIPTION = {
@@ -79,12 +57,12 @@ class Service:
             poller = Poller(self.store, self.sheets, bot.grades, self.layouts)
             bot.poller, bot.budget = poller, self.budget
             poller.on_read, self.budget.notify = bot.after_read, bot.budget_notice
-            await self.set_commands(api)
+            await self.set_commands(api, bot)
             await self.set_profile(api)
             await asyncio.gather(poll(api, bot, self.store), poller.run(), bot.watch_access(),
                                  backups.run(self.store, self.data / "backups", self.env.zone))
 
-    async def set_commands(self, api: BotApi) -> None:
+    async def set_commands(self, api: BotApi, bot: Bot) -> None:
         for lang in ("en", "ru"):
             code = None if lang == "en" else lang
             await api.set_commands(USER_COMMANDS[lang], lang=code)
@@ -92,6 +70,7 @@ class Service:
                 await api.set_commands(OWNER_COMMANDS[lang], chat_id=self.env.owner_id, lang=code)
             except TelegramError as e:  # the owner has not opened the bot yet
                 log.warning("owner's commands not set: %s", e)
+        await bot.admin_menus()
 
 
     async def set_profile(self, api: BotApi) -> None:

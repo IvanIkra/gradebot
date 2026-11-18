@@ -14,6 +14,8 @@ async def test_invite_step_by_step(bot, api, access):
     assert buttons(question) == {"A1": f"an:{a1}", "Новая группа": "an:+", "Без группы: выберет сам": "an:",
                                  "Отмена": "ac"}
     await press(bot, OWNER, str(a1))
+    assert "Кто входит по коду?" in api.last(OWNER)["text"]
+    await press(bot, OWNER)                                         # members
     assert "Сколько человек" in api.last(OWNER)["text"]
     await bot.handle(message(OWNER, "много"))                       # wrong: asked again with the reason
     assert "Число от 1 до 1000" in api.last(OWNER)["text"] and "Сколько человек" in api.last(OWNER)["text"]
@@ -40,6 +42,7 @@ async def test_invite_to_a_new_group(bot, api, access):
     await bot.handle(message(OWNER, "A1"))                          # taken: asked again
     assert "Такая группа уже есть" in api.last(OWNER)["text"]
     await bot.handle(message(OWNER, "B2"))
+    await press(bot, OWNER)                                         # members
     assert "Сколько человек" in api.last(OWNER)["text"]
     for value in ("x5", "", "", ""):                                # people, lifetime, access, note
         await press(bot, OWNER, value)

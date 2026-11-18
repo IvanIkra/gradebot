@@ -30,7 +30,8 @@ create table if not exists invites (
     revoked_at text,
     access_days integer,            -- who comes in has access for this many days from then ...
     access_until text,              -- ... or until then; both null: for good
-    grp integer references groups(id) on delete set null  -- the group the user lands in; null: they pick one
+    grp integer references groups(id) on delete set null,  -- the group the user lands in; null: they pick one
+    rank integer not null default 0  -- the rank the user gets: 2 makes them the group's admin
 );
 create table if not exists users (
     tg_id integer primary key,
@@ -45,7 +46,8 @@ create table if not exists users (
     invite_id integer references invites(id),
     grp integer references groups(id) on delete set null,  -- the user's group: they follow its sheets
     grp_fixed integer not null default 0,  -- the group came with the invite code: only the owner moves the user
-    rank integer not null default 0,  -- 0: a sheet new to the bot waits for the owner's approval; 1: trusted
+    rank integer not null default 0,  -- 0: a sheet new to the bot waits for approval; 1: trusted; 2: also the
+                                    -- admin of their group
     expires_at text,                -- the user's access ends then: no reads, no messages; null: for good
     access_told integer not null default 0,  -- 1: the end was told a day before, 2: the end was told
     prolong_asked integer not null default 0  -- the user asked the owner to prolong the access
@@ -167,6 +169,7 @@ UPGRADES = (
     ("invites", "access_days", "integer"),
     ("invites", "access_until", "text"),
     ("invites", "grp", "integer references groups(id) on delete set null"),
+    ("invites", "rank", "integer not null default 0"),
     ("sheet_requests", "course", "text not null default ''"),
     ("grade_items", "label_ru", "text"),
     ("grade_events", "label_ru", "text"),

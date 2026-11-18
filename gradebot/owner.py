@@ -4,7 +4,8 @@ Callbacks: `rq:<invite>` asks to revoke a code and `rv:<invite>` revokes it, `co
 `up:<page>` turns a page of users, `ua` drops the search, `uc:<user>` opens a user's card,
 `du:<user>` asks to delete a user and `dy:<user>` deletes them, `rk:<user>` trusts a user or stops trusting them,
 `ae:<user>` offers to prolong a user's access and `ax:<user>.<days>` prolongs it (0: for good),
-`ug:<user>` offers the groups to move a user to and `um:<user>.<group>` moves them (group 0: none),
+`ug:<user>` offers the groups to move a user to and `um:<user>.<group>` moves them (group 0: none), `ra:<user>`
+makes a user their group's admin or takes it back,
 `nr:<user>` resets a user's full name, `sa:<request>` and `sd:<request>` approve and decline a user's sheet,
 `groups` redraws the groups, `gs:<group>` shows a group's sheets, `gr:<group>.<sheet>` takes a sheet from a group,
 `gd:<group>` asks to delete a group and `gx:<group>` deletes it, `rn:<sheet>` asks for a sheet's short name,
@@ -19,7 +20,7 @@ from dataclasses import replace
 from urllib.parse import quote
 
 from . import clock, poller
-from .access import MEMBER, TRUSTED
+from .access import ADMIN, MEMBER, TRUSTED
 from .dialog import Step, asks_hint, link_step
 from .groups import GroupError, group_name
 from .i18n import days as n_days
@@ -103,8 +104,16 @@ class OwnerCommands:
             if user is None:
                 return None
             self.access.set_rank(number, MEMBER if user["rank"] >= TRUSTED else TRUSTED)
+            if user["rank"] >= ADMIN:
+                await self.admin_menu(self.access.user(number))
             await self.show(chat, message_id, self.user_card(number, lang))
             return tr(lang, "Trusted", "Доверенный") if user["rank"] < TRUSTED else tr(lang, "Member", "Обычный")
+        elif kind == "ra" and number:
+            user = self.access.user(number)
+            if user is None or await self.set_admin(number, user["rank"] < ADMIN) is None:
+                return None
+            await self.show(chat, message_id, self.user_card(number, lang))
+            return tr(lang, "Admin", "Админ") if user["rank"] < ADMIN else tr(lang, "Trusted", "Доверенный")
         elif kind == "ae" and number:
             user = self.access.user(number)
             if user is None:
@@ -211,15 +220,20 @@ class OwnerCommands:
             await self.api.send(chat, self.invite_help(lang))
         elif arg.strip():
             try:
-                args = invite_args(arg, self.groups.find, self.now(), self.zone)
+                args = invite_args(arg, self.groups.find, self.now(), self.zone, admin_word=True)
             except ValueError:
                 await self.api.send(chat, self.invite_help(lang))
+                return
+            if args["rank"] >= ADMIN and args["group"] is None:
+                await self.api.send(chat, tr(lang, "An admin's code goes to a group: /invite <group> admin",
+                                             "Код админа — только в группу: /invite <группа> админ"))
                 return
             await self.api.send(chat, self.make_invite(args, lang))
         else:
             await self.flow(chat, lang, self.invite_steps(lang), lambda data: self.invite_asked(chat, data, lang))
 
-    def invite_steps(self, lang: str) -> list[Step]:
+    def invite_steps(self, lang: str, admin: dict | None = None) -> list[Step]:
+        """The questions of /invite; `admin`: of a group admin, within their limits (`admins.py`)."""
         def token(kind: str, fix):
             def check(value: str, data: dict) -> str:
                 word = fix(value.strip().lower().replace(" ", ""))
@@ -233,31 +247,52 @@ class OwnerCommands:
         def plain(text: str):
             return lambda data: Doc().p(text)
 
+        def admin_word(value: str, data: dict) -> str:
+            if value.strip().lower() not in ("admin", "админ"):
+                raise ValueError(value)
+            return "admin"
+
         people = tr(lang, "A number from 1 to 1000, or x* for any number.",
                     "Число от 1 до 1000 или x* — сколько угодно.")
         days = tr(lang, "Like 3d or 12h, up to 365 days.", "Например 3д или 12ч, до 365 дней.")
         access = tr(lang, "Like +30d, or a date: +31.12.", "Например +30д или дата: +31.12.")
+        if admin is not None:
+            from .admins import ADMIN_LIFETIME, ADMIN_USES
+            people = tr(lang, f"A number from 1 to {ADMIN_USES}.", f"Число от 1 до {ADMIN_USES}.")
+            days = tr(lang, f"Like 3d or 12h, up to {ADMIN_LIFETIME.days} days.",
+                      f"Например 3д или 12ч, до {ADMIN_LIFETIME.days} дней.")
+            uses = [("1", "x1"), ("5", "x5"), ("10", "x10"), (str(ADMIN_USES), f"x{ADMIN_USES}")]
+            lifetimes = sorted({1, 3, min(self.access.invite_days, ADMIN_LIFETIME.days), ADMIN_LIFETIME.days})
+            forever = tr(lang, "As long as mine", "Как у меня") if admin["expires_at"] else \
+                tr(lang, "For good", "Бессрочно")
+        else:
+            uses = [("1", "x1"), ("5", "x5"), ("10", "x10"), ("30", "x30"),
+                    (tr(lang, "Any number", "Сколько угодно"), "x*")]
+            lifetimes = sorted({1, 3, self.access.invite_days, 30})
+            forever = tr(lang, "For good", "Бессрочно")
         return [
             self.group_step(lang, tr(lang, "No group: they pick one", "Без группы: выберет сам"), new=True),
             replace(self.group_name_step(lang), name="new_group", when=lambda data: data.get("group") == NEW_GROUP),
+            Step("rank", plain(tr(lang, "Who comes in with the code?", "Кто входит по коду?")),
+                 check=admin_word,
+                 error=lambda lang, e: tr(lang, "A button, please.", "Выбери кнопкой."),
+                 choices=lambda data: [(tr(lang, "The group's admin", "Админ группы"), "admin")],
+                 skip=lambda data: tr(lang, "Members", "Участники"), when=lambda data: bool(data.get("group"))),
             Step("people", plain(tr(lang, "How many people may come in with the code? ",
                                     "Сколько человек может войти по коду? ") + people),
                  check=token("uses", lambda v: v if v.startswith(("x", "х")) else f"x{v}"),
-                 error=lambda lang, e: people,
-                 choices=lambda data: [("1", "x1"), ("5", "x5"), ("10", "x10"), ("30", "x30"),
-                                       (tr(lang, "Any number", "Сколько угодно"), "x*")]),
+                 error=lambda lang, e: people, choices=lambda data: uses),
             Step("lifetime", plain(tr(lang, "How long does the code work? ", "Сколько действует код? ") + days),
                  check=token("lifetime", lambda v: f"{v}{tr(lang, 'd', 'д')}" if v.isdigit() else v),
                  error=lambda lang, e: days,
-                 choices=lambda data: [(n_days(lang, n), f"{n}d")
-                                       for n in sorted({1, 3, self.access.invite_days, 30})]),
+                 choices=lambda data: [(n_days(lang, n), f"{n}d") for n in lifetimes]),
             Step("access", plain(tr(lang, "How long does the access last? ", "На сколько открыть доступ? ") + access),
                  check=token("access_any", lambda v: v if v.startswith("+") else
                              f"+{v}{tr(lang, 'd', 'д')}" if v.isdigit() else f"+{v}"),
                  error=lambda lang, e: access,
                  choices=lambda data: [(tr(lang, "30 days", "30 дней"), "+30d"),
                                        (tr(lang, "90 days", "90 дней"), "+90d")],
-                 skip=lambda data: tr(lang, "For good", "Бессрочно")),
+                 skip=lambda data: forever),
             Step("note", plain(tr(lang, "A note for yourself: who the code is for.",
                                   "Пометка для себя: для кого код.")),
                  skip=lambda data: tr(lang, "No note", "Без пометки")),
@@ -270,6 +305,7 @@ class OwnerCommands:
             access = invite_args(data["access"], lambda _: None, self.now(), self.zone)
             args["access_days"], args["access_until"] = access["access_days"], access["access_until"]
         args["note"] = data.get("note", "")
+        args["rank"] = ADMIN if data.get("rank") == "admin" else MEMBER
         made = Doc()
         if data.get("group") == NEW_GROUP:
             try:
@@ -286,7 +322,8 @@ class OwnerCommands:
         invite_id, new = self.access.invite(group=group["id"] if group else None, **args)
         invite = next(inv for inv in self.access.open_invites() if inv["id"] == invite_id)
         note = args["note"]
-        doc = Doc().p(tr(lang, "Code", "Код"), f" «{note}»" if note else "",
+        doc = Doc().p(tr(lang, "Admin's code", "Код админа") if args.get("rank", MEMBER) >= ADMIN else
+                      tr(lang, "Code", "Код"), f" «{note}»" if note else "",
                       *([tr(lang, " to the group ", " в группу "), b(group["name"])] if group else []), ": ",
                       self.people(invite, lang), tr(lang, ", works until ", ", действует до "),
                       self.when(invite["expires_at"], lang), tr(lang, ", access ", ", доступ "),
@@ -354,7 +391,9 @@ class OwnerCommands:
                  tr(lang, "access for 30 days from coming in, or until 31.12; for good by default",
                     "доступ на 30 дней после входа или до 31.12; по умолчанию бессрочно")],
                 [tr(lang, "group", "группа"), tr(lang, "the user lands in it and only you move them",
-                                                 "пользователь сразу в ней, переводишь только ты")]]
+                                                 "пользователь сразу в ней, переводишь только ты")],
+                [tr(lang, "admin", "админ"), tr(lang, "with a group: who comes in is the group's admin",
+                                               "вместе с группой: вошедший становится админом группы")]]
         return (Doc().p(code(tr(lang, "/invite [group] [x5] [3d] [+30d] [note]",
                                 "/invite [группа] [x5] [3д] [+30д] [пометка]")), " — ",
                         tr(lang, "in any order:", "в любом порядке:"))
@@ -452,13 +491,18 @@ class OwnerCommands:
             *([[tr(lang, "State", "Состояние"), tr(lang, "blocked the bot", "заблокировал(а) бота")]]
               if user["paused"] else [])])
         doc.p(i(tr(lang, "A member's sheet that the bot doesn't read yet waits for your approval; a trusted user's "
-                         "doesn't.",
-                   "Новую для бота таблицу обычного пользователя ты сначала одобряешь, доверенного — нет.")))
+                         "doesn't. A group's admin is trusted and runs the group: codes to it, its users, its shared "
+                         "sheets, its members' requests.",
+                   "Новую для бота таблицу обычного пользователя ты сначала одобряешь, доверенного — нет. Админ "
+                   "группы — доверенный, который ведёт свою группу: коды в неё, участники, общие таблицы, заявки.")))
         trusted = user["rank"] >= TRUSTED
         doc.buttons((tr(lang, "Make a member", "Сделать обычным") if trusted else tr(lang, "Trust", "Доверять"),
                      f"rk:{tg_id}"),
                     *([(tr(lang, "Group", "Группа"), f"ug:{tg_id}")] if self.groups.all() else []),
                     (tr(lang, "Access", "Доступ"), f"ae:{tg_id}"))
+        if user["grp"]:
+            doc.buttons((tr(lang, "Not the group's admin", "Снять админа") if user["rank"] >= ADMIN else
+                         tr(lang, "Make the group's admin", "Сделать админом группы"), f"ra:{tg_id}"))
         doc.buttons(*([(tr(lang, "Reset the full name", "Сбросить ФИО"), f"nr:{tg_id}")] if user["student"] else []),
                     (tr(lang, "Delete", "Удалить"), f"du:{tg_id}", "danger"))
         return doc.buttons((tr(lang, "« Users", "« Пользователи"), "users"))
@@ -528,13 +572,10 @@ class OwnerCommands:
             b(group["name"]) if group else "", ". ",
             tr(ulang, f"Unfollowed sheets: {left}, followed: {len(followed)}. The list is in /sheets.",
                f"Отписал от таблиц: {left}, подписал на: {len(followed)}. Список — в /sheets.")))
+        await self.moved_news(user, self.groups.get(user["grp"]), group)
         if user["student"] and followed:
             self.read_soon(tg_id, followed)
         return tr(lang, "Moved", "Переведён")
-
-    @staticmethod
-    def rank(user: dict, lang: str) -> str:
-        return tr(lang, "trusted", "доверенный") if user["rank"] >= TRUSTED else tr(lang, "member", "обычный")
 
     def delete_view(self, tg_id: int, lang: str) -> Doc:
         user = self.access.user(tg_id)
@@ -551,6 +592,8 @@ class OwnerCommands:
         if user is None or not self.access.delete(tg_id):
             return tr(lang, "Already deleted", "Уже удалён")
         self.sheets.drop_orphans()
+        await self.group_news(user["grp"], tg_id, lambda ulang: [
+            self.who(user), tr(ulang, ": the owner closed their access", ": владелец закрыл доступ")])
         try:
             await self.api.send(tg_id, tr(user["lang"], "The owner closed your access to the bot.",
                                           "Владелец закрыл тебе доступ к боту."))
@@ -579,7 +622,8 @@ class OwnerCommands:
 
     # --- requests for sheets ----------------------------------------------------------------------
 
-    async def approve(self, chat: int, message_id: int | None, rid: int, lang: str) -> str:
+    async def approve(self, chat: int, message_id: int | None, rid: int, lang: str, by: dict | None = None) -> str:
+        """The owner, or `by` a group's admin, approves a member's sheet."""
         try:
             done = self.sheets.approve(rid)
         except SheetError:
@@ -588,18 +632,29 @@ class OwnerCommands:
             return tr(lang, "Already handled", "Уже решено")
         request, sheet = done
         user = self.access.user(request["tg_id"])
-        await self.show(chat, message_id, Doc().p(
-            tr(lang, "Approved: ", "Одобрено: "), link(sheet_name(sheet), request["url"]), tr(lang, " for ", " для "),
-            self.who(user), ". ", self.no_course(lang)).buttons(
-            (tr(lang, "Set a short name", "Задать имя"), f"rn:{sheet['id']}")))
+        approved = Doc().p(tr(lang, "Approved: ", "Одобрено: "), link(sheet_name(sheet), request["url"]),
+                           tr(lang, " for ", " для "), self.who(user), ".")
+        if by is None:
+            await self.show(chat, message_id, approved.p(self.no_course(lang)).buttons(
+                (tr(lang, "Set a short name", "Задать имя"), f"rn:{sheet['id']}")))
+        else:
+            await self.show(chat, message_id, approved)
+            owner = self.owner_lang
+            await self.news(self.who(by), tr(owner, ", the group's admin, approved ", ", админ группы, одобрил(а) "),
+                            link(sheet_name(sheet), request["url"]), tr(owner, " for ", " для "), self.who(user),
+                            buttons=((tr(owner, "Set a short name", "Задать имя"), f"rn:{sheet['id']}"),))
         ulang = user["lang"]
-        await self.tell(user, Doc().p(tr(ulang, "The owner approved the sheet. ", "Владелец одобрил таблицу. "))
+        await self.tell(user, Doc().p(tr(ulang, "The owner approved the sheet. ", "Владелец одобрил таблицу. ")
+                                      if by is None else
+                                      tr(ulang, "Your group's admin approved the sheet. ",
+                                         "Админ группы одобрил таблицу. "))
                         .extend(self.following(user, sheet)))
         if user["student"]:
             self.read_soon(user["tg_id"], [sheet["id"]])
         return tr(lang, "Approved", "Одобрено")
 
-    async def decline(self, chat: int, message_id: int | None, rid: int, lang: str) -> str:
+    async def decline(self, chat: int, message_id: int | None, rid: int, lang: str, by: dict | None = None) -> str:
+        """The owner, or `by` a group's admin, declines a member's sheet."""
         request = self.sheets.drop_request(rid)
         if request is None:
             return tr(lang, "Already handled", "Уже решено")
@@ -607,8 +662,15 @@ class OwnerCommands:
         await self.show(chat, message_id, Doc().p(
             tr(lang, "Declined: ", "Отклонено: "), link(request["url"], request["url"]), tr(lang, " for ", " для "),
             self.who(user), "."))
+        if by is not None:
+            owner = self.owner_lang
+            await self.news(self.who(by), tr(owner, ", the group's admin, declined ", ", админ группы, отклонил(а) "),
+                            link(request["url"], request["url"]), tr(owner, " for ", " для "), self.who(user))
         ulang = user["lang"]
-        await self.tell(user, Doc().p(tr(ulang, "The owner declined the sheet ", "Владелец отклонил таблицу "),
+        await self.tell(user, Doc().p(tr(ulang, "The owner declined the sheet ", "Владелец отклонил таблицу ")
+                                      if by is None else
+                                      tr(ulang, "Your group's admin declined the sheet ",
+                                         "Админ группы отклонил таблицу "),
                                       link(request["url"], request["url"]), "."))
         return tr(lang, "Declined", "Отклонено")
 
@@ -911,16 +973,19 @@ MAX_USES = 1000
 MAX_DAYS = 365
 
 
-def invite_args(text: str, find_group, now: dt.datetime, zone: dt.tzinfo) -> dict:
+def invite_args(text: str, find_group, now: dt.datetime, zone: dt.tzinfo, admin_word: bool = False) -> dict:
     """`/invite` arguments in any order: a group's name (the first word that names one), `x5` or `x*` people, `3d`
-    or `12h` the code works, `+30d` or `+31.12[.2027]` of access; the other words are the note. ValueError for a
-    number out of range or a date gone."""
-    out: dict = {"group": None, "uses": 1, "lifetime": None, "access_days": None, "access_until": None}
+    or `12h` the code works, `+30d` or `+31.12[.2027]` of access, with `admin_word` «admin» for an admin's code; the
+    other words are the note. ValueError for a number out of range or a date gone."""
+    out: dict = {"group": None, "uses": 1, "lifetime": None, "access_days": None, "access_until": None,
+                 "rank": MEMBER}
     note = []
     for word in text.split():
         low = word.lower()
         if out["group"] is None and (group := find_group(word)) is not None:
             out["group"] = group
+        elif admin_word and low in ("admin", "админ"):
+            out["rank"] = ADMIN
         elif found := re.fullmatch(r"[xх×](\d+|\*)", low):
             out["uses"] = 0 if found[1] == "*" else int(found[1])
             if not 0 <= out["uses"] <= MAX_USES or found[1] == "0":

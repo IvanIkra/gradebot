@@ -25,21 +25,31 @@ and no public web part: the bot only talks to the Bot API by long polling.
 | user | `/feedback [text]` | write to the owner: a question, a bug, an idea; the owner's answer comes back in the chat (5 a day) |
 | user | `/help` | the commands |
 | user | `/stop` | erase everything the bot keeps about you and leave |
-| owner | `/invite [group] [x5\|x*] [3d] [+30d\|+31.12] [note]` | an invite code and its link, the words in any order: `x5` lets in up to 5 people and `x*` any number (one by default); `3d` or `12h` is how long the code works (`INVITE_DAYS` by default); `+30d` gives access for 30 days from coming in and `+31.12` until that date (for good by default). With a group the user lands in it, without one they pick it. `/invite help` explains |
+| owner | `/invite [group] [x5\|x*] [3d] [+30d\|+31.12] [note]` | an invite code and its link, the words in any order: `x5` lets in up to 5 people and `x*` any number (one by default); `3d` or `12h` is how long the code works (`INVITE_DAYS` by default); `+30d` gives access for 30 days from coming in and `+31.12` until that date (for good by default). With a group the user lands in it, without one they pick it; with a group and `admin` they come in as its admin. `/invite help` explains |
 | owner | `/codes` | open codes: how many came in, the access they give; a button to revoke each |
-| owner | `/users [text]` | users, ten a page, newest first; with text, those whose name, @username, full name, code note or group has it. A user's card trusts them (their new sheets need no approval), moves them to another group, prolongs their access, resets their full name or deletes them |
+| owner | `/users [text]` | users, ten a page, newest first; with text, those whose name, @username, full name, code note or group has it. A user's card trusts them (their new sheets need no approval), makes them their group's admin, moves them to another group, prolongs their access, resets their full name or deletes them |
 | owner | `/groups [name [new name]]` | groups: make one, rename one; buttons show a group's sheets or delete it |
 | owner | `/groupsheet [group] [link [short name]]` | a group's shared sheets: everyone in the group follows them, newcomers too |
 | owner | `/rename <link> [short name]` | a sheet's short name and hashtag (up to 10 characters) for everyone who follows it; without one, its title in Google. Only the owner names sheets: a sheet new to the bot comes with a "Set a short name" button |
 | owner | `/relayout <link>` | drop a sheet's cached layout: its tabs are laid out again at once |
 | owner | `/status` | sheets and their errors, users, Haiku spending today and this month |
 | owner | `/interval [minutes]` | how often the sheets are read: 30 minutes by default, 5 to 240 |
+| group admin | `/invite [x5] [3d] [+30d] [note]` | a code to the admin's group: up to 30 people, working up to 7 days, giving no longer access than the admin's own |
+| group admin | `/codes` | the open codes to the group; a button to revoke each |
+| group admin | `/users` | who is in the group, and each one's card |
+| group admin | `/groupsheet [link]` | the group's shared sheets: add one, take one away |
+| group admin | `/news` | how the group's news come: a quiet digest (the default), a message each, or none |
 
 After the invite code the bot asks for the full name at once. A command sent without its arguments, as the command
 menu sends it, asks for them one by one: buttons for the usual answers, a button to leave an optional one empty, and
 Cancel. A command typed with its arguments runs at once.
 
 A sheet is stored once for everyone who follows it, so it is downloaded and laid out once.
+
+A group's admin is a trusted user who runs the group they are in. Sheets its members ask for come to the admin to
+approve as well as to the owner, and the owner hears of what the admin does. The admin gets the news of the group
+(who came in, set a full name, joined or left, left the bot or blocked it, whose access ends) the way they pick with
+`/news`. An admin moved to another group, or whose group is deleted, is only trusted.
 
 ## How grades are read
 

@@ -31,9 +31,10 @@ WRONG_WINDOW = dt.timedelta(hours=1)  # ... within this long make the bot silent
 # A code that still lets people in; the parameter is now.
 OPEN = "revoked_at is null and expires_at > ? and (uses = 0 or used < uses)"
 
-# Ranks: what a user may do without the owner. A member's sheet that the bot does not read yet waits for the owner's
-# approval; a trusted user's is followed at once. A sheet the bot already reads costs nothing new: anyone follows it.
-MEMBER, TRUSTED = 0, 1
+# Ranks: what a user may do without the owner. A member's sheet that the bot does not read yet waits for approval;
+# a trusted user's is followed at once. A sheet the bot already reads costs nothing new: anyone follows it. An admin
+# is trusted and also runs their own group (`admins.py`); in no group they are only trusted.
+MEMBER, TRUSTED, ADMIN = 0, 1, 2
 
 
 def normalise(code: str) -> str:
@@ -65,10 +66,11 @@ class Access:
     # --- invites ------------------------------------------------------------------------------
 
     def invite(self, note: str = "", group: int | None = None, uses: int = 1, lifetime: dt.timedelta | None = None,
-               access_days: int | None = None, access_until: dt.datetime | None = None) -> tuple[int, str]:
-        """A new code: (invite id, the code). It lands its users in `group`, lets in `uses` people (0: any number),
-        works for `lifetime` (INVITE_DAYS by default) and gives access for `access_days` from coming in or until
-        `access_until` (neither: for good). The code is shown once and never stored."""
+               access_days: int | None = None, access_until: dt.datetime | None = None,
+               rank: int = MEMBER) -> tuple[int, str]:
+        """A new code: (invite id, the code). It lands its users in `group` with `rank`, lets in `uses` people (0: any
+        number), works for `lifetime` (INVITE_DAYS by default) and gives access for `access_days` from coming in or
+        until `access_until` (neither: for good). The code is shown once and never stored."""
         now = self.now()
         while True:
             code = new_code()
@@ -76,10 +78,10 @@ class Access:
                 with self.db:
                     cur = self.db.execute(
                         "insert into invites(code_hash, note, created_at, expires_at, grp, uses, access_days, "
-                        "access_until) values(?, ?, ?, ?, ?, ?, ?, ?)",
+                        "access_until, rank) values(?, ?, ?, ?, ?, ?, ?, ?, ?)",
                         (code_hash(code), " ".join(note.split())[:NOTE_LENGTH], clock.utc_iso(now),
                          clock.utc_iso(now + (lifetime or dt.timedelta(days=self.invite_days))), group, uses,
-                         access_days, clock.utc_iso(access_until) if access_until else None))
+                         access_days, clock.utc_iso(access_until) if access_until else None, rank))
                 return cur.lastrowid, code
             except sqlite3.IntegrityError:  # the same code twice: try another one
                 continue
@@ -111,9 +113,10 @@ class Access:
                             (user.tg_id, now, row["id"]))
             expires = row["access_until"] or (clock.utc_iso(moment + dt.timedelta(days=row["access_days"]))
                                               if row["access_days"] else None)
-            self.db.execute("insert into users(tg_id, tg_name, username, lang, joined_at, invite_id, expires_at) "
-                            "values(?, ?, ?, ?, ?, ?, ?)",
-                            (user.tg_id, user.tg_name, user.username, user.lang, now, row["id"], expires))
+            self.db.execute("insert into users(tg_id, tg_name, username, lang, joined_at, invite_id, expires_at, rank) "
+                            "values(?, ?, ?, ?, ?, ?, ?, ?)",
+                            (user.tg_id, user.tg_name, user.username, user.lang, now, row["id"], expires,
+                             row["rank"] if row["grp"] else MEMBER))
         self._wrong.pop(user.tg_id, None)
         return {**dict(row), "used": row["used"] + 1, "used_by": user.tg_id, "used_at": now}
 
@@ -205,6 +208,13 @@ class Access:
         with self.db:
             cur = self.db.execute("update users set rank = ? where tg_id = ?", (rank, tg_id))
         return cur.rowcount == 1
+
+    def admins(self, gid: int | None) -> list[dict]:
+        """The group's admins who hear from the bot: not paused, access not ended."""
+        rows = self.db.execute("select * from users where grp = ? and rank >= ? and paused = 0 "
+                               "and (expires_at is null or expires_at > ?) order by joined_at",
+                               (gid, ADMIN, clock.utc_iso(self.now()))) if gid else []
+        return [dict(row) for row in rows]
 
     def set_paused(self, tg_id: int, paused: bool) -> None:
         with self.db:
