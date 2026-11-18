@@ -10,7 +10,8 @@ makes a user their group's admin or takes it back,
 `groups` redraws the groups, `gs:<group>` shows a group's sheets, `gr:<group>.<sheet>` takes a sheet from a group,
 `gd:<group>` asks to delete a group and `gx:<group>` deletes it, `rn:<sheet>` asks for a sheet's short name,
 `rl:<sheet>` lays a sheet out again, `st` redraws
-/status, `iv:<minutes>` sets how often the sheets are read, `fa:<user>` answers a user's /feedback.
+/status, `iv:<minutes>` sets how often the sheets are read, `fa:<user>` answers a user's /feedback, `al:u.<people>`
+and `al:d.<days>` set the limits of the groups' admins' codes.
 """
 
 import datetime as dt
@@ -65,6 +66,8 @@ class OwnerCommands:
             await self.api.send(chat, self.status_view(lang))
         elif cmd == "/interval":
             await self.cmd_interval(chat, arg, lang)
+        elif cmd == "/limits":
+            await self.cmd_limits(chat, arg, lang)
         else:
             await self.api.send(chat, self.owner_help(lang))
 
@@ -173,6 +176,13 @@ class OwnerCommands:
         elif kind == "st":
             await self.show(chat, message_id, self.status_view(lang))
             return tr(lang, "Updated", "Обновлено")
+        elif kind == "al":
+            what, _, value = arg.partition(".")
+            if what not in ("u", "d") or not value.isdigit() or not (int(value) or what == "u"):
+                return None
+            self.set_limits(**({"uses": int(value)} if what == "u" else {"days": int(value)}))
+            await self.show(chat, message_id, self.limits_view(lang))
+            return tr(lang, "Saved", "Сохранено")
         elif kind == "iv" and number:
             if not self.set_interval(number):
                 return None
@@ -208,7 +218,10 @@ class OwnerCommands:
                             ["/status", tr(lang, "sheets, errors, users, Haiku spending",
                                            "таблицы, ошибки, пользователи, расход Haiku")],
                             ["/interval " + tr(lang, "[minutes]", "[минуты]"),
-                             tr(lang, "how often the sheets are read", "как часто читать таблицы")]])
+                             tr(lang, "how often the sheets are read", "как часто читать таблицы")],
+                            ["/limits " + tr(lang, "[x50|x*] [14d]", "[x50|x*] [14д]"),
+                             tr(lang, "what a group admin's code may: how many people, how many days",
+                                "что может код админа группы: сколько человек, сколько дней")]])
                 .p(asks_hint(lang)))
 
     # --- invites ---------------------------------------------------------------------------------
@@ -257,12 +270,16 @@ class OwnerCommands:
         days = tr(lang, "Like 3d or 12h, up to 365 days.", "Например 3д или 12ч, до 365 дней.")
         access = tr(lang, "Like +30d, or a date: +31.12.", "Например +30д или дата: +31.12.")
         if admin is not None:
-            from .admins import ADMIN_LIFETIME, ADMIN_USES
-            people = tr(lang, f"A number from 1 to {ADMIN_USES}.", f"Число от 1 до {ADMIN_USES}.")
-            days = tr(lang, f"Like 3d or 12h, up to {ADMIN_LIFETIME.days} days.",
-                      f"Например 3д или 12ч, до {ADMIN_LIFETIME.days} дней.")
-            uses = [("1", "x1"), ("5", "x5"), ("10", "x10"), (str(ADMIN_USES), f"x{ADMIN_USES}")]
-            lifetimes = sorted({1, 3, min(self.access.invite_days, ADMIN_LIFETIME.days), ADMIN_LIFETIME.days})
+            most, longest = self.limits()
+            if most:
+                people = tr(lang, f"A number from 1 to {most}.", f"Число от 1 до {most}.")
+                uses = [(str(n), f"x{n}") for n in sorted({n for n in (1, 5, 10) if n < most} | {most})]
+            else:
+                uses = [("1", "x1"), ("5", "x5"), ("10", "x10"), ("30", "x30"),
+                        (tr(lang, "Any number", "Сколько угодно"), "x*")]
+            days = tr(lang, f"Like 3d or 12h, up to {n_days('en', longest)}.",
+                      f"Например 3д или 12ч, до {n_days('ru', longest)}.")
+            lifetimes = sorted({n for n in (1, 3, self.access.invite_days) if n < longest} | {longest})
             forever = tr(lang, "As long as mine", "Как у меня") if admin["expires_at"] else \
                 tr(lang, "For good", "Бессрочно")
         else:
@@ -889,6 +906,37 @@ class OwnerCommands:
                     cancel=False)
         await self.flow(chat, lang, [step], done, {"minutes": arg.strip()} if arg.strip() else None)
 
+    async def cmd_limits(self, chat: int, arg: str, lang: str) -> None:
+        """`/limits [x50|x*] [14d]`: how many people a group admin's code lets in and how long it works; without
+        arguments the limits now with buttons, and other ones typed."""
+        def check(value: str, data: dict) -> str:
+            limit_args(value)
+            return value
+
+        async def done(data: dict) -> None:
+            self.set_limits(**limit_args(data["limits"]))
+            await self.api.send(chat, self.limits_view(lang))
+
+        step = Step("limits", lambda data: self.limits_view(lang), check=check,
+                    error=lambda lang, e: tr(lang, f"Like x50 or x* for people, 14d for days, up to {MAX_DAYS}.",
+                                             f"Например x50 или x* — люди, 14д — дни, до {MAX_DAYS}."),
+                    cancel=False)
+        await self.flow(chat, lang, [step], done, {"limits": arg.strip()} if arg.strip() else None)
+
+    def limits_view(self, lang: str) -> Doc:
+        uses, days = self.limits()
+        people = tr(lang, f"up to {uses} people", f"до {uses} человек") if uses else \
+            tr(lang, "any number of people", "сколько угодно человек")
+        doc = Doc().p(tr(lang, "A group admin's code lets in ", "Код админа группы впускает "), b(people),
+                      tr(lang, " and works up to ", " и действует до "), b(n_days(lang, days)), ". ",
+                      tr(lang, "The access it gives is never longer than the admin's own.",
+                         "Доступ по нему — никогда не дольше, чем у самого админа."))
+        doc.p(tr(lang, "Others: send them, like ", "Другие — пришли их, например "), code("x50 14д" if lang == "ru"
+                                                                                         else "x50 14d"), ".")
+        doc.buttons(*[(("✓ " if n == uses else "") + (str(n) if n else tr(lang, "Any number", "Сколько угодно")),
+                       f"al:u.{n}") for n in (10, 30, 50, 0)])
+        return doc.buttons(*[(("✓ " if n == days else "") + n_days(lang, n), f"al:d.{n}") for n in (3, 7, 14, 30)])
+
     def set_interval(self, minutes: int) -> bool:
         """False for minutes out of range. The poller takes the new interval at once."""
         try:
@@ -971,6 +1019,25 @@ SOON = dt.timedelta(days=3)     # /status counts the users whose access ends wit
 UNITS = {"d": 24, "д": 24, "h": 1, "ч": 1}
 MAX_USES = 1000
 MAX_DAYS = 365
+
+
+def limit_args(text: str) -> dict:
+    """`/limits` arguments: `x50` or `x*` people, `14d` days; ValueError for anything else or nothing."""
+    out = {}
+    for word in text.lower().split():
+        if found := re.fullmatch(r"[xх×](\d+|\*)", word):
+            out["uses"] = 0 if found[1] == "*" else int(found[1])
+            if not 0 <= out["uses"] <= MAX_USES or found[1] == "0":
+                raise ValueError(word)
+        elif found := re.fullmatch(r"(\d+)[dд]?", word):
+            out["days"] = int(found[1])
+            if not 1 <= out["days"] <= MAX_DAYS:
+                raise ValueError(word)
+        else:
+            raise ValueError(word)
+    if not out:
+        raise ValueError(text)
+    return out
 
 
 def invite_args(text: str, find_group, now: dt.datetime, zone: dt.tzinfo, admin_word: bool = False) -> dict:

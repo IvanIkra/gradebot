@@ -14,12 +14,13 @@ OWNER_COMMANDS = {
     "en": [("invite", "an invite code"), ("codes", "open codes"), ("users", "users"),
            ("groups", "groups"), ("groupsheet", "the groups' shared sheets"), ("rename", "a sheet's short name"),
            ("relayout", "lay a sheet out again"), ("status", "sheets, users, Haiku"),
-           ("interval", "how often the sheets are read"), ("help", "commands")],
+           ("interval", "how often the sheets are read"), ("limits", "the limits of the groups' admins"),
+           ("help", "commands")],
     "ru": [("invite", "код приглашения"), ("codes", "действующие коды"), ("users", "пользователи"),
            ("groups", "группы"), ("groupsheet", "общие таблицы групп"), ("rename", "короткое имя таблицы"),
            ("relayout", "разметить таблицу заново"),
            ("status", "таблицы, пользователи, Haiku"), ("interval", "как часто читать таблицы"),
-           ("help", "команды")],
+           ("limits", "лимиты админов групп"), ("help", "команды")],
 }
 ADMIN_COMMANDS = {
     "en": [("invite", "a code to your group"), ("codes", "your group's codes"), ("users", "your group"),

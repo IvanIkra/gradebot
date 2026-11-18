@@ -34,7 +34,8 @@ and no public web part: the bot only talks to the Bot API by long polling.
 | owner | `/relayout <link>` | drop a sheet's cached layout: its tabs are laid out again at once |
 | owner | `/status` | sheets and their errors, users, Haiku spending today and this month |
 | owner | `/interval [minutes]` | how often the sheets are read: 30 minutes by default, 5 to 240 |
-| group admin | `/invite [x5] [3d] [+30d] [note]` | a code to the admin's group: up to 30 people, working up to 7 days, giving no longer access than the admin's own |
+| owner | `/limits [x50\|x*] [14d]` | what a group admin's code may: how many people (`x*` any number) and how many days it works; 30 people and 7 days by default |
+| group admin | `/invite [x5] [3d] [+30d] [note]` | a code to the admin's group within the owner's `/limits` (30 people and 7 days by default), giving no longer access than the admin's own |
 | group admin | `/codes` | the open codes to the group; a button to revoke each |
 | group admin | `/users` | who is in the group, and each one's card |
 | group admin | `/groupsheet [link]` | the group's shared sheets: add one, take one away |

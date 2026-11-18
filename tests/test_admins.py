@@ -3,6 +3,7 @@
 import pytest
 
 from gradebot.access import ADMIN, MEMBER, TRUSTED
+from gradebot.owner import limit_args
 
 from .conftest import OWNER, buttons, callback, invite_code, message, press
 from .test_sheets import ALG, CALC
@@ -191,3 +192,32 @@ async def test_the_help_of_an_admin(bot, api, groups):
     assert "Админ группы A1" in api.last(ADA)["text"]
     await bot.handle(say(BOB, "/help"))
     assert "Админ группы" not in api.last(BOB)["text"]
+
+
+def test_limit_args():
+    assert limit_args("x50 14д") == {"uses": 50, "days": 14}
+    assert limit_args("x*") == {"uses": 0} and limit_args("10") == {"days": 10}
+    for bad in ("", "x0", "x1001", "0д", "400d", "много"):
+        with pytest.raises(ValueError):
+            limit_args(bad)
+
+
+async def test_the_owner_sets_admins_limits(bot, api, access, groups):
+    await bot.handle(message(OWNER, "/limits"))
+    view = api.last(OWNER)
+    assert "<b>до 30 человек</b>" in view["text"] and "до <b>7 дней</b>" in view["text"]
+    assert buttons(view)["50"] == "al:u.50" and "✓ 30" in buttons(view) and "✓ 7 дней" in buttons(view)
+    await bot.handle(callback(OWNER, "al:u.5"))
+    assert bot.limits() == (5, 7) and "✓ 5" not in buttons(api.last(OWNER))   # not a button: set anyway
+    await bot.handle(say(ADA, "/invite x10"))
+    assert "не больше 5 человек" in api.last(ADA)["text"] and "до 5 человек" in api.last(ADA)["text"]
+
+    await bot.handle(message(OWNER, "/limits"))
+    await bot.handle(message(OWNER, "много"))                    # wrong: asked again
+    assert "Например x50 или x*" in api.last(OWNER)["text"]
+    await bot.handle(message(OWNER, "x* 14д"))
+    assert bot.limits() == (0, 14) and "сколько угодно человек" in api.last(OWNER)["text"]
+    await bot.handle(say(ADA, "/invite x* 10д"))
+    assert "без ограничения" in api.last(ADA)["text"] and invite_code(api.last(ADA)["text"])
+    await bot.handle(callback(OWNER, "al:d.0"))
+    assert bot.limits() == (0, 14)

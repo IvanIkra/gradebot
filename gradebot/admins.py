@@ -1,10 +1,11 @@
 """A group's admins: users of rank ADMIN who run the group they are in, within limits the owner does not need to
 watch.
 
-An admin makes codes to their group (members only, at most ADMIN_USES people, working at most ADMIN_LIFETIME, and no
-longer access than their own), sees their group's codes and revokes them, sees who is in the group, gives the group
-shared sheets or takes them away, and approves or declines the sheets its members ask for. The owner hears of what an
-admin does in their news. An admin gets the news of their group in the way they pick with /news (`news.py`).
+An admin makes codes to their group (members only, within the limits the owner sets with /limits: so many people,
+working so many days; and no longer access than their own), sees their group's codes and revokes them, sees who is in
+the group, gives the group shared sheets or takes them away, and approves or declines the sheets its members ask for.
+The owner hears of what an admin does in their news. An admin gets the news of their group in the way they pick
+with /news (`news.py`).
 
 The owner makes a user an admin with a button in their card, or with a code that lets one in as the admin of its
 group. An admin moved to another group, or whose group is deleted, is only trusted.
@@ -21,6 +22,7 @@ import logging
 from . import clock
 from .access import ADMIN, MEMBER, TRUSTED
 from .dialog import link_step
+from .i18n import days as n_days
 from .i18n import tr
 from .menus import ADMIN_COMMANDS, USER_COMMANDS
 from .news import DIGEST, EACH, OFF, admin_news, news_mode
@@ -31,14 +33,24 @@ from .telegram import TelegramError
 
 log = logging.getLogger(__name__)
 
-ADMIN_USES = 30                             # people one admin's code lets in at most
-ADMIN_LIFETIME = dt.timedelta(days=7)       # how long an admin's code works at most
+LIMITS = "admin.limits"     # kv: {"uses", "days"}: people an admin's code lets in at most (0: any number), and days
+DEFAULT_LIMITS = {"uses": 30, "days": 7}    # it works at most
 ADMIN_KINDS = {"ml", "mc", "ak", "aq", "av", "gr", "gsa", "sa", "sd", "nm", "nw"}
 ADMIN_COMMAND_NAMES = {"/invite", "/codes", "/users", "/groupsheet", "/news"}
 MODES = (DIGEST, EACH, OFF)
 
 
 class GroupAdmins:
+    def limits(self) -> tuple[int, int]:
+        """(people an admin's code lets in at most, 0 for any number; days it works at most)."""
+        found = {**DEFAULT_LIMITS, **self.store.get_json(LIMITS, {})}
+        return found["uses"], found["days"]
+
+    def set_limits(self, uses: int | None = None, days: int | None = None) -> None:
+        now_uses, now_days = self.limits()
+        self.store.put_json(LIMITS, {"uses": now_uses if uses is None else uses,
+                                     "days": now_days if days is None else days})
+
     def admin_group(self, user: dict | None) -> dict | None:
         """The group the user runs: an admin's own group, or None."""
         if user is None or user["rank"] < ADMIN or not user["grp"]:
@@ -168,12 +180,14 @@ class GroupAdmins:
 
     def admin_help(self, user: dict) -> Doc:
         lang, group = user["lang"], self.admin_group(user)
+        uses, days = self.limits()
+        people = tr(lang, f"up to {uses} people", f"до {uses} человек") if uses else \
+            tr(lang, "any number of people", "сколько угодно человек")
         return Doc().h(tr(lang, "Admin of ", "Админ группы ") + group["name"]).table([], [
             ["/invite " + tr(lang, "[x5] [3d] [+30d] [note]", "[x5] [3д] [+30д] [пометка]"),
-             tr(lang, f"a code to your group: up to {ADMIN_USES} people, works up to "
-                      f"{ADMIN_LIFETIME.days} days, access no longer than yours",
-                f"код в твою группу: до {ADMIN_USES} человек, действует до {ADMIN_LIFETIME.days} дней, доступ — "
-                f"не дольше твоего")],
+             tr(lang, f"a code to your group: {people}, works up to {n_days('en', days)}, access no longer "
+                      "than yours",
+                f"код в твою группу: {people}, действует до {n_days('ru', days)}, доступ — не дольше твоего")],
             ["/codes", tr(lang, "your group's open codes, revoke", "действующие коды группы, отзыв")],
             ["/users", tr(lang, "who is in your group", "кто в твоей группе")],
             ["/groupsheet " + tr(lang, "[link]", "[ссылка]"),
@@ -226,16 +240,16 @@ class GroupAdmins:
     def admin_limits(self, user: dict, args: dict) -> str | None:
         """Hold an admin's code within their limits: why it can't be, or None. Access past the admin's own is cut to
         it."""
-        lang = user["lang"]
-        if args["uses"] == 0 or args["uses"] > ADMIN_USES:
-            return tr(lang, f"A code of yours lets in at most {ADMIN_USES} people.",
-                      f"Твой код может впустить не больше {ADMIN_USES} человек.")
-        lifetime = args["lifetime"] or dt.timedelta(days=self.access.invite_days)
-        if lifetime > ADMIN_LIFETIME:
+        lang, (uses, days) = user["lang"], self.limits()
+        if uses and (args["uses"] == 0 or args["uses"] > uses):
+            return tr(lang, f"A code of yours lets in at most {uses} people.",
+                      f"Твой код может впустить не больше {uses} человек.")
+        lifetime, longest = args["lifetime"] or dt.timedelta(days=self.access.invite_days), dt.timedelta(days=days)
+        if lifetime > longest:
             if args["lifetime"]:
-                return tr(lang, f"A code of yours works at most {ADMIN_LIFETIME.days} days.",
-                          f"Твой код действует не больше {ADMIN_LIFETIME.days} дней.")
-            lifetime = ADMIN_LIFETIME
+                return tr(lang, f"A code of yours works at most {n_days('en', days)}.",
+                          f"Твой код действует не больше {n_days('ru', days)}.")
+            lifetime = longest
         args["lifetime"] = lifetime
         if user["expires_at"]:
             end = clock.parse(user["expires_at"])
