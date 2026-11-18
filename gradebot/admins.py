@@ -34,22 +34,37 @@ from .telegram import TelegramError
 log = logging.getLogger(__name__)
 
 LIMITS = "admin.limits"     # kv: {"uses", "days"}: people an admin's code lets in at most (0: any number), and days
-DEFAULT_LIMITS = {"uses": 30, "days": 7}    # it works at most
+DEFAULT_LIMITS = {"uses": 30, "days": 7}    # it works at most; shared by the admins without limits of their own
+
+
+def own_limits(tg_id: int) -> str:
+    """kv: an admin's own limits, {"uses", "days"}, over the shared ones."""
+    return f"{LIMITS}.{tg_id}"
 ADMIN_KINDS = {"ml", "mc", "ak", "aq", "av", "gr", "gsa", "sa", "sd", "nm", "nw"}
 ADMIN_COMMAND_NAMES = {"/invite", "/codes", "/users", "/groupsheet", "/news"}
 MODES = (DIGEST, EACH, OFF)
 
 
 class GroupAdmins:
-    def limits(self) -> tuple[int, int]:
-        """(people an admin's code lets in at most, 0 for any number; days it works at most)."""
-        found = {**DEFAULT_LIMITS, **self.store.get_json(LIMITS, {})}
+    def limits(self, tg_id: int | None = None) -> tuple[int, int]:
+        """(people an admin's code lets in at most, 0 for any number; days it works at most): the admin's own when
+        they have them, else the shared ones (tg_id None: the shared ones)."""
+        found = {**DEFAULT_LIMITS, **(self.store.get_json(LIMITS) or {}),
+                 **((self.store.get_json(own_limits(tg_id)) or {}) if tg_id else {})}
         return found["uses"], found["days"]
 
-    def set_limits(self, uses: int | None = None, days: int | None = None) -> None:
-        now_uses, now_days = self.limits()
-        self.store.put_json(LIMITS, {"uses": now_uses if uses is None else uses,
-                                     "days": now_days if days is None else days})
+    def has_own_limits(self, tg_id: int) -> bool:
+        return bool(self.store.get_json(own_limits(tg_id)))
+
+    def set_limits(self, uses: int | None = None, days: int | None = None, tg_id: int | None = None) -> None:
+        """The shared limits, or (with `tg_id`) an admin's own ones, starting from what they have now."""
+        now_uses, now_days = self.limits(tg_id)
+        self.store.put_json(own_limits(tg_id) if tg_id else LIMITS,
+                            {"uses": now_uses if uses is None else uses, "days": now_days if days is None else days})
+
+    def drop_own_limits(self, tg_id: int) -> None:
+        """The admin goes by the shared limits again."""
+        self.store.put_json(own_limits(tg_id), None)
 
     def admin_group(self, user: dict | None) -> dict | None:
         """The group the user runs: an admin's own group, or None."""
@@ -180,7 +195,7 @@ class GroupAdmins:
 
     def admin_help(self, user: dict) -> Doc:
         lang, group = user["lang"], self.admin_group(user)
-        uses, days = self.limits()
+        uses, days = self.limits(user["tg_id"])
         people = tr(lang, f"up to {uses} people", f"до {uses} человек") if uses else \
             tr(lang, "any number of people", "сколько угодно человек")
         return Doc().h(tr(lang, "Admin of ", "Админ группы ") + group["name"]).table([], [
@@ -240,7 +255,7 @@ class GroupAdmins:
     def admin_limits(self, user: dict, args: dict) -> str | None:
         """Hold an admin's code within their limits: why it can't be, or None. Access past the admin's own is cut to
         it."""
-        lang, (uses, days) = user["lang"], self.limits()
+        lang, (uses, days) = user["lang"], self.limits(user["tg_id"])
         if uses and (args["uses"] == 0 or args["uses"] > uses):
             return tr(lang, f"A code of yours lets in at most {uses} people.",
                       f"Твой код может впустить не больше {uses} человек.")

@@ -11,7 +11,8 @@ makes a user their group's admin or takes it back,
 `gd:<group>` asks to delete a group and `gx:<group>` deletes it, `rn:<sheet>` asks for a sheet's short name,
 `rl:<sheet>` lays a sheet out again, `st` redraws
 /status, `iv:<minutes>` sets how often the sheets are read, `fa:<user>` answers a user's /feedback, `al:u.<people>`
-and `al:d.<days>` set the limits of the groups' admins' codes.
+and `al:d.<days>` set the shared limits of the groups' admins' codes, `al:<user>` shows an admin's own,
+`al:<user>.u.<people>` and `al:<user>.d.<days>` set them, `al:<user>.r` drops them for the shared ones.
 """
 
 import datetime as dt
@@ -177,11 +178,22 @@ class OwnerCommands:
             await self.show(chat, message_id, self.status_view(lang))
             return tr(lang, "Updated", "Обновлено")
         elif kind == "al":
-            what, _, value = arg.partition(".")
-            if what not in ("u", "d") or not value.isdigit() or not (int(value) or what == "u"):
+            parts = arg.split(".")
+            who = int(parts.pop(0)) if parts and parts[0].isdigit() else None
+            if who is not None and (self.access.user(who) or {}).get("rank", 0) < ADMIN:
+                return tr(lang, "Not an admin", "Не админ")
+            if who is not None and not parts:
+                await self.cmd_limits(chat, "", lang, who)
                 return None
-            self.set_limits(**({"uses": int(value)} if what == "u" else {"days": int(value)}))
-            await self.show(chat, message_id, self.limits_view(lang))
+            if who is not None and parts == ["r"]:
+                self.drop_own_limits(who)
+            elif len(parts) == 2 and parts[0] in ("u", "d") and parts[1].isdigit() and \
+                    (int(parts[1]) or parts[0] == "u"):
+                self.set_limits(**({"uses": int(parts[1])} if parts[0] == "u" else {"days": int(parts[1])}),
+                                tg_id=who)
+            else:
+                return None
+            await self.show(chat, message_id, self.limits_view(lang, who))
             return tr(lang, "Saved", "Сохранено")
         elif kind == "iv" and number:
             if not self.set_interval(number):
@@ -270,7 +282,7 @@ class OwnerCommands:
         days = tr(lang, "Like 3d or 12h, up to 365 days.", "Например 3д или 12ч, до 365 дней.")
         access = tr(lang, "Like +30d, or a date: +31.12.", "Например +30д или дата: +31.12.")
         if admin is not None:
-            most, longest = self.limits()
+            most, longest = self.limits(admin["tg_id"])
             if most:
                 people = tr(lang, f"A number from 1 to {most}.", f"Число от 1 до {most}.")
                 uses = [(str(n), f"x{n}") for n in sorted({n for n in (1, 5, 10) if n < most} | {most})]
@@ -501,6 +513,9 @@ class OwnerCommands:
             [tr(lang, "Full name", "ФИО"), user["student"] or "—"],
             [tr(lang, "Group", "Группа"), self.group_cell(user, lang)],
             [tr(lang, "Rank", "Ранг"), self.rank(user, lang)],
+            *([[tr(lang, "Codes' limits", "Лимиты кодов"), self.limits_text(lang, tg_id) + (
+                "" if self.has_own_limits(tg_id) else tr(lang, " (shared)", " (общие)"))]]
+              if user["rank"] >= ADMIN and user["grp"] else []),
             [tr(lang, "Joined", "С нами с"), self.when(user["joined_at"], lang)],
             [tr(lang, "Access until", "Доступ до"), self.until(user, lang)],
             [tr(lang, "Code", "Код"), user["note"] or "—"],
@@ -519,7 +534,9 @@ class OwnerCommands:
                     (tr(lang, "Access", "Доступ"), f"ae:{tg_id}"))
         if user["grp"]:
             doc.buttons((tr(lang, "Not the group's admin", "Снять админа") if user["rank"] >= ADMIN else
-                         tr(lang, "Make the group's admin", "Сделать админом группы"), f"ra:{tg_id}"))
+                         tr(lang, "Make the group's admin", "Сделать админом группы"), f"ra:{tg_id}"),
+                        *([(tr(lang, "Codes' limits", "Лимиты кодов"), f"al:{tg_id}")] if user["rank"] >= ADMIN
+                          else []))
         doc.buttons(*([(tr(lang, "Reset the full name", "Сбросить ФИО"), f"nr:{tg_id}")] if user["student"] else []),
                     (tr(lang, "Delete", "Удалить"), f"du:{tg_id}", "danger"))
         return doc.buttons((tr(lang, "« Users", "« Пользователи"), "users"))
@@ -906,36 +923,69 @@ class OwnerCommands:
                     cancel=False)
         await self.flow(chat, lang, [step], done, {"minutes": arg.strip()} if arg.strip() else None)
 
-    async def cmd_limits(self, chat: int, arg: str, lang: str) -> None:
-        """`/limits [x50|x*] [14d]`: how many people a group admin's code lets in and how long it works; without
-        arguments the limits now with buttons, and other ones typed."""
+    async def cmd_limits(self, chat: int, arg: str, lang: str, tg_id: int | None = None) -> None:
+        """`/limits [x50|x*] [14d]`: how many people a group admin's code lets in and how long it works, for every
+        admin without limits of their own, or (`tg_id`) one admin's own; without arguments the limits now with
+        buttons, and other ones typed."""
         def check(value: str, data: dict) -> str:
             limit_args(value)
             return value
 
         async def done(data: dict) -> None:
-            self.set_limits(**limit_args(data["limits"]))
-            await self.api.send(chat, self.limits_view(lang))
+            self.set_limits(**limit_args(data["limits"]), tg_id=tg_id)
+            await self.api.send(chat, self.limits_view(lang, tg_id))
 
-        step = Step("limits", lambda data: self.limits_view(lang), check=check,
+        step = Step("limits", lambda data: self.limits_view(lang, tg_id), check=check,
                     error=lambda lang, e: tr(lang, f"Like x50 or x* for people, 14d for days, up to {MAX_DAYS}.",
                                              f"Например x50 или x* — люди, 14д — дни, до {MAX_DAYS}."),
                     cancel=False)
         await self.flow(chat, lang, [step], done, {"limits": arg.strip()} if arg.strip() else None)
 
-    def limits_view(self, lang: str) -> Doc:
-        uses, days = self.limits()
+    def limits_text(self, lang: str, tg_id: int | None = None) -> str:
+        """«up to 30 people, 7 days» of the shared limits or of an admin's."""
+        uses, days = self.limits(tg_id)
         people = tr(lang, f"up to {uses} people", f"до {uses} человек") if uses else \
             tr(lang, "any number of people", "сколько угодно человек")
-        doc = Doc().p(tr(lang, "A group admin's code lets in ", "Код админа группы впускает "), b(people),
-                      tr(lang, " and works up to ", " и действует до "), b(n_days(lang, days)), ". ",
-                      tr(lang, "The access it gives is never longer than the admin's own.",
-                         "Доступ по нему — никогда не дольше, чем у самого админа."))
+        return f"{people}, {n_days(lang, days)}"
+
+    def limits_view(self, lang: str, tg_id: int | None = None) -> Doc:
+        """The shared limits with every admin and their own ones, or (`tg_id`) one admin's limits."""
+        uses, days = self.limits(tg_id)
+        people = tr(lang, f"up to {uses} people", f"до {uses} человек") if uses else \
+            tr(lang, "any number of people", "сколько угодно человек")
+        admin = self.access.user(tg_id) if tg_id else None
+        own = admin is not None and self.has_own_limits(tg_id)
+        if admin is None:
+            doc = Doc().p(tr(lang, "A group admin's code lets in ", "Код админа группы впускает "), b(people),
+                          tr(lang, " and works up to ", " и действует до "), b(n_days(lang, days)), ". ",
+                          tr(lang, "These are every admin's limits unless they have their own. ",
+                             "Это лимиты всех админов, у кого нет своих. "),
+                          tr(lang, "The access it gives is never longer than the admin's own.",
+                             "Доступ по нему — никогда не дольше, чем у самого админа."))
+        else:
+            doc = Doc().p(tr(lang, "Codes of ", "Коды админа "), self.who(admin), ": ", b(people),
+                          tr(lang, ", works up to ", ", действует до "), b(n_days(lang, days)), ". ",
+                          tr(lang, "Their own limits." if own else "The shared limits.",
+                             "Свои лимиты." if own else "Общие лимиты, как у всех."))
         doc.p(tr(lang, "Others: send them, like ", "Другие — пришли их, например "), code("x50 14д" if lang == "ru"
                                                                                          else "x50 14d"), ".")
+        prefix = f"al:{tg_id}." if admin is not None else "al:"
         doc.buttons(*[(("✓ " if n == uses else "") + (str(n) if n else tr(lang, "Any number", "Сколько угодно")),
-                       f"al:u.{n}") for n in (10, 30, 50, 0)])
-        return doc.buttons(*[(("✓ " if n == days else "") + n_days(lang, n), f"al:d.{n}") for n in (3, 7, 14, 30)])
+                       f"{prefix}u.{n}") for n in (10, 30, 50, 0)])
+        doc.buttons(*[(("✓ " if n == days else "") + n_days(lang, n), f"{prefix}d.{n}") for n in (3, 7, 14, 30)])
+        if admin is not None:
+            if own:
+                doc.buttons((tr(lang, "Shared: ", "Как у всех: ") + self.limits_text(lang), f"al:{tg_id}.r"))
+            return doc.buttons((tr(lang, "« Card", "« Карточка"), f"uc:{tg_id}"))
+        admins = [u for u in self.access.users() if u["rank"] >= ADMIN and u["grp"]]
+        if admins:
+            doc.table([tr(lang, "Admin", "Админ"), tr(lang, "Group", "Группа"), tr(lang, "Limits", "Лимиты")],
+                      [[self.who(u), u["group_name"],
+                        self.limits_text(lang, u["tg_id"]) if self.has_own_limits(u["tg_id"]) else
+                        tr(lang, "shared", "общие")] for u in admins])
+            for start in range(0, min(len(admins), 30), 2):
+                doc.buttons(*[(u["tg_name"], f"al:{u['tg_id']}") for u in admins[start:start + 2]])
+        return doc
 
     def set_interval(self, minutes: int) -> bool:
         """False for minutes out of range. The poller takes the new interval at once."""

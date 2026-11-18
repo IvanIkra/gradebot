@@ -27,14 +27,14 @@ and no public web part: the bot only talks to the Bot API by long polling.
 | user | `/stop` | erase everything the bot keeps about you and leave |
 | owner | `/invite [group] [x5\|x*] [3d] [+30d\|+31.12] [note]` | an invite code and its link, the words in any order: `x5` lets in up to 5 people and `x*` any number (one by default); `3d` or `12h` is how long the code works (`INVITE_DAYS` by default); `+30d` gives access for 30 days from coming in and `+31.12` until that date (for good by default). With a group the user lands in it, without one they pick it; with a group and `admin` they come in as its admin. `/invite help` explains |
 | owner | `/codes` | open codes: how many came in, the access they give; a button to revoke each |
-| owner | `/users [text]` | users, ten a page, newest first; with text, those whose name, @username, full name, code note or group has it. A user's card trusts them (their new sheets need no approval), makes them their group's admin, moves them to another group, prolongs their access, resets their full name or deletes them |
+| owner | `/users [text]` | users, ten a page, newest first; with text, those whose name, @username, full name, code note or group has it. A user's card trusts them (their new sheets need no approval), makes them their group's admin and sets that admin's own limits, moves them to another group, prolongs their access, resets their full name or deletes them |
 | owner | `/groups [name [new name]]` | groups: make one, rename one; buttons show a group's sheets or delete it |
 | owner | `/groupsheet [group] [link [short name]]` | a group's shared sheets: everyone in the group follows them, newcomers too |
 | owner | `/rename <link> [short name]` | a sheet's short name and hashtag (up to 10 characters) for everyone who follows it; without one, its title in Google. Only the owner names sheets: a sheet new to the bot comes with a "Set a short name" button |
 | owner | `/relayout <link>` | drop a sheet's cached layout: its tabs are laid out again at once |
 | owner | `/status` | sheets and their errors, users, Haiku spending today and this month |
 | owner | `/interval [minutes]` | how often the sheets are read: 30 minutes by default, 5 to 240 |
-| owner | `/limits [x50\|x*] [14d]` | what a group admin's code may: how many people (`x*` any number) and how many days it works; 30 people and 7 days by default |
+| owner | `/limits [x50\|x*] [14d]` | what a group admin's code may: how many people (`x*` any number) and how many days it works; 30 people and 7 days by default. These are shared by the admins without limits of their own; an admin's own are set from their card in `/users` or from the list of admins here |
 | group admin | `/invite [x5] [3d] [+30d] [note]` | a code to the admin's group within the owner's `/limits` (30 people and 7 days by default), giving no longer access than the admin's own |
 | group admin | `/codes` | the open codes to the group; a button to revoke each |
 | group admin | `/users` | who is in the group, and each one's card |

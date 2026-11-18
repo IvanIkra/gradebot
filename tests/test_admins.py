@@ -221,3 +221,34 @@ async def test_the_owner_sets_admins_limits(bot, api, access, groups):
     assert "без ограничения" in api.last(ADA)["text"] and invite_code(api.last(ADA)["text"])
     await bot.handle(callback(OWNER, "al:d.0"))
     assert bot.limits() == (0, 14)
+
+
+async def test_each_admin_their_own_limits(bot, api, access, groups):
+    await bot.handle(callback(OWNER, f"ra:{BOB}"))                # a second admin of A1
+    await bot.handle(callback(OWNER, f"uc:{ADA}"))
+    card = api.last(OWNER)
+    assert "до 30 человек, 7 дней (общие)" in card["text"] and buttons(card)["Лимиты кодов"] == f"al:{ADA}"
+    await bot.handle(callback(OWNER, f"al:{ADA}"))
+    view = api.last(OWNER)
+    assert "Общие лимиты, как у всех" in view["text"] and buttons(view)["50"] == f"al:{ADA}.u.50"
+    await bot.handle(message(OWNER, "x5 3д"))                     # typed under her limits
+    assert bot.limits(ADA) == (5, 3) and bot.limits(BOB) == (30, 7) and bot.limits() == (30, 7)
+    assert "Свои лимиты" in api.last(OWNER)["text"]
+    await bot.handle(callback(OWNER, f"al:{ADA}.u.10"))
+    assert bot.limits(ADA) == (10, 3)
+
+    await bot.handle(say(ADA, "/invite x20"))
+    assert "не больше 10 человек" in api.last(ADA)["text"]
+    await bot.handle(say(BOB, "/invite x20"))
+    assert invite_code(api.last(BOB)["text"])
+
+    await bot.handle(callback(OWNER, "al:u.50"))                  # the shared ones: Bob's, not Ada's
+    assert bot.limits(BOB) == (50, 7) and bot.limits(ADA) == (10, 3)
+    await bot.handle(message(OWNER, "/limits"))
+    shared = api.last(OWNER)
+    assert "до 10 человек, 3 дня" in shared["text"] and "общие" in shared["text"]
+    assert buttons(shared)["Ада"] == f"al:{ADA}"
+    await bot.handle(callback(OWNER, f"al:{ADA}.r"))
+    assert bot.limits(ADA) == (50, 7) and not bot.has_own_limits(ADA)
+    await bot.handle(callback(OWNER, f"al:{EVA}.u.5"))            # not an admin
+    assert api.calls[-1][1]["text"] == "Не админ" and not bot.has_own_limits(EVA)
