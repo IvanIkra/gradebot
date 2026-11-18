@@ -13,7 +13,7 @@ makes a user their group's admin or takes it back,
 /status, `iv:<minutes>` sets how often the sheets are read, `fa:<user>` answers a user's /feedback, `al:u.<people>`
 and `al:d.<days>` set the shared limits of the groups' admins' codes, `al:<user>` shows an admin's own,
 `al:<user>.u.<people>` and `al:<user>.d.<days>` set them, `al:<user>.r` drops them for the shared ones; `sj:…` are
-/subjects' (subjects.py).
+/subjects' (subjects.py), `fm:…` a subject's formula (formulas.py).
 """
 
 import datetime as dt
@@ -81,6 +81,8 @@ class OwnerCommands:
         number = int(arg) if arg.isdigit() else None
         if kind == "sj":
             return await self.subjects_callback(chat, message_id, None, arg, lang)
+        if kind == "fm":
+            return await self.formula_callback(chat, message_id, None, arg, lang)
         if kind == "rq" and number:
             await self.show(chat, message_id, self.revoke_view(number, lang))
         elif kind == "rv" and number:

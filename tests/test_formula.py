@@ -179,7 +179,7 @@ def test_in_words():
     tree = check({"nodes": {"Накоп": total((0.5, part("ДЗ", agg="best", k=4)), (0.5, part("КР")))},
                   "final": blocking_exam()})
     assert describe(tree, "ru") == [
-        "Накоп = 0.5·ДЗ (4 лучших) + 0.5·КР",
+        "Накоп = 0.5·ДЗ (лучшие 4) + 0.5·КР",
         "Итог = если Экз < 4, то Экз, иначе округл(0.6·Накоп + 0.4·Экз)"]
     assert describe(tree, "en")[1] == "Final = if Экз < 4: Экз, else round(0.6·Накоп + 0.4·Экз)"
 
@@ -188,4 +188,15 @@ def test_warnings():
     tree = check({"nodes": {"Накоп": total((0.5, part("ДЗ", "h1")), (0.4, part("КР", "t1")))},
                   "final": total((0.6, ref("Накоп")), (0.4, part("Экз")), bonus=[(0.1, part("Доп", "x"))])})
     assert warnings(tree, plan("h1", "t1", "lab")) == [
-        ("weights", "Накоп 0.9"), ("empty", "Экз"), ("empty", "Доп"), ("outside", "LAB")]
+        ("weights", "Накоп", 0.9), ("empty", "Экз", None), ("empty", "Доп", None), ("outside", "LAB", None)]
+
+
+def test_a_new_work_joins_the_part_its_label_matches():
+    tree = check({"final": total((0.5, part("ДЗ", "h1", match=["ДЗ"])), (0.5, part("КР", "t1", match=["КР"])))})
+    works = [{"key": "h1", "label": "HW 1", "label_ru": "ДЗ 1", "max": 10},
+             {"key": "t1", "label": "Test 1", "label_ru": "КР 1", "max": 10},
+             {"key": "h2", "label": "HW 2", "label_ru": "дз 2", "max": 10},       # added after the formula
+             {"key": "x", "label": "Lab", "label_ru": "Лаба", "max": 10}]
+    f = Formula(tree, works, graded(h1=6, h2=8, t1=5))
+    assert [w.key for w in f.works("ДЗ")] == ["h1", "h2"] and f.value(0) == pytest.approx(0.5 * 7 + 0.5 * 5)
+    assert warnings(tree, works) == [("outside", "Лаба", None)]

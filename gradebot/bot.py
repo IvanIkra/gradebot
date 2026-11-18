@@ -13,6 +13,7 @@ from . import clock
 from .access import ALPHABET, CODE_LENGTH, Access, NewUser, normalise
 from .admins import GroupAdmins
 from .dialog import Dialogs
+from .formulas import FormulaCommands
 from .grades import Grades
 from .groups import Groups
 from .i18n import days, guess, tr
@@ -51,7 +52,8 @@ def full_name(user: dict) -> str:
     return " ".join(filter(None, (user.get("first_name"), user.get("last_name")))) or str(user["id"])
 
 
-class Bot(GroupAdmins, OwnerCommands, UserCommands, SubjectCommands, ReadNotices, OwnerNews, Dialogs):
+class Bot(GroupAdmins, OwnerCommands, UserCommands, SubjectCommands, FormulaCommands, ReadNotices, OwnerNews,
+          Dialogs):
     def __init__(self, api: BotApi, store: Store, access: Access, sheets: Sheets, owner_id: int, zone: dt.tzinfo,
                  username: str = "", now: Callable[[], dt.datetime] = clock.now_utc):
         self.api, self.store, self.access, self.sheets = api, store, access, sheets
@@ -61,6 +63,7 @@ class Bot(GroupAdmins, OwnerCommands, UserCommands, SubjectCommands, ReadNotices
         self.subjects = Subjects(store, now)
         self.poller: Poller | None = None   # set by the service; without it nothing is read
         self.budget: Budget | None = None   # set by the service: the owner's /status shows the spending
+        self.llm = None                     # Haiku, set by the service: /formula reads formulas with it
         self._tasks: set[asyncio.Task] = set()
 
     @property

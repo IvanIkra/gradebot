@@ -11,6 +11,7 @@ deletes it.
 """
 
 import datetime as dt
+import json
 from collections.abc import Callable
 from dataclasses import dataclass, field
 
@@ -108,6 +109,45 @@ class Subjects:
         with self.db:
             return self.db.execute("delete from subject_sheets where subject = ? and sheet = ?",
                                    (sid, sheet)).rowcount == 1
+
+    # --- formulas ---------------------------------------------------------------------------------
+
+    def set_formula(self, sid: int, text: str | None, tree: dict | None, tg_id: int | None = None) -> None:
+        """The subject's formula, or with `tg_id` that user's own one; None drops it."""
+        with self.db:
+            if tg_id is None:
+                self.db.execute("update subjects set formula = ?, tree = ? where id = ?",
+                                (text, json.dumps(tree, ensure_ascii=False) if tree else None, sid))
+            elif tree is None:
+                self.db.execute("delete from subject_formulas where tg_id = ? and subject = ?", (tg_id, sid))
+            else:
+                self.db.execute("insert into subject_formulas(tg_id, subject, formula, tree) values(?, ?, ?, ?) "
+                                "on conflict(tg_id, subject) do update set formula = excluded.formula, "
+                                "tree = excluded.tree", (tg_id, sid, text, json.dumps(tree, ensure_ascii=False)))
+
+    def own_formula(self, tg_id: int, sid: int) -> dict | None:
+        """{text, tree, own: True} of a user's own formula of a subject."""
+        row = self.db.execute("select formula, tree from subject_formulas where tg_id = ? and subject = ?",
+                              (tg_id, sid)).fetchone()
+        return None if row is None else {"text": row["formula"], "tree": json.loads(row["tree"]), "own": True}
+
+    def subject_formula(self, sid: int) -> dict | None:
+        """{text, tree, own: False} of the subject's formula."""
+        row = self.db.execute("select formula, tree from subjects where id = ? and tree is not null",
+                              (sid,)).fetchone()
+        return None if row is None else {"text": row["formula"], "tree": json.loads(row["tree"]), "own": False}
+
+    def formula_for(self, tg_id: int, sid: int) -> dict | None:
+        """The formula a user's grades in a subject are counted by: their own, else the subject's."""
+        return self.own_formula(tg_id, sid) or self.subject_formula(sid)
+
+    def plan(self, sid: int) -> list[dict]:
+        """Every work of the subject's sheets, graded or not yet, in the subject's order, with the sheet's name."""
+        rows = self.db.execute(
+            "select w.*, coalesce(nullif(s.course, ''), s.title, '') sheet_name from subject_sheets j "
+            "join sheet_works w on w.sheet = j.sheet join sheets s on s.id = j.sheet where j.subject = ? "
+            "order by j.rowid, w.position", (sid,))
+        return [dict(row) for row in rows]
 
     def units(self, user: dict, sheets: list[dict]) -> list[Unit]:
         """The user's followed sheets (in their order) as sections: their own subjects first, then their group's."""
@@ -242,6 +282,7 @@ class SubjectCommands:
                      "Добавить нечего: у группы нет общих таблиц.") if scope[0] == "g" else
                   tr(lang, "There are no sheets to add: follow some with /sheet.",
                      "Добавить нечего: подпишись на таблицы через /sheet."))
+        doc.buttons((tr(lang, "Formula", "Формула"), f"fm:s.{sid}"))
         return doc.buttons((tr(lang, "Rename", "Переименовать"), f"sj:r.{sid}"),
                            (tr(lang, "Delete", "Удалить"), f"sj:d.{sid}", "danger"),
                            (tr(lang, "« Back", "« Назад"), f"sj:l.{scope}"))

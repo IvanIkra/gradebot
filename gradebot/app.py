@@ -55,7 +55,7 @@ class Service:
             bot = Bot(api, self.store, self.access, self.sheets, self.env.owner_id, self.env.zone,
                       me.get("username") or "")
             poller = Poller(self.store, self.sheets, bot.grades, self.layouts)
-            bot.poller, bot.budget = poller, self.budget
+            bot.poller, bot.budget, bot.llm = poller, self.budget, self.layouts.llm
             poller.on_read, self.budget.notify = bot.after_read, bot.budget_notice
             await self.set_commands(api, bot)
             await self.set_profile(api)

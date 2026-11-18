@@ -15,7 +15,7 @@ from .journal import Journal
 log = logging.getLogger(__name__)
 
 MODEL = "claude-haiku-5-5"
-TASKS = frozenset({"grades"})
+TASKS = frozenset({"grades", "formula"})
 
 
 class LLMError(RuntimeError):

@@ -4,7 +4,7 @@ Callbacks: `grades` sends /grades, `rf` redraws it in place, `wr:<sheet>` compla
 `ck:<sheet>` reads a sheet now, `us:<sheet>` unfollows it, `cr:<request>` cancels a request for a sheet waiting for
 the owner, `gp:<group>` moves the user to a group (0: none) from /group, `gj:<group>` from the first message,
 `add` asks for a sheet to follow, `qt:<hours|off>` sets quiet hours, `lg:<en|ru>` the language, `stop` and `stop!`
-cancel and confirm /stop; `sj:…` are /subjects' (subjects.py).
+cancel and confirm /stop; `sj:…` are /subjects' (subjects.py), `fm:…` /formula's (formulas.py).
 """
 
 import datetime as dt
@@ -46,7 +46,8 @@ class UserCommands:
         handlers = {"/grades": self.cmd_grades, "/name": self.cmd_name, "/sheet": self.cmd_sheet,
                     "/sheets": self.cmd_sheets, "/group": self.cmd_group, "/quiet": self.cmd_quiet,
                     "/lang": self.cmd_lang, "/feedback": self.cmd_feedback, "/stop": self.cmd_stop,
-                    "/subjects": lambda chat, user, arg: self.cmd_subjects(chat, user, arg, lang)}
+                    "/subjects": lambda chat, user, arg: self.cmd_subjects(chat, user, arg, lang),
+                    "/formula": self.cmd_formula}
         if await self.admin_command(chat, user, cmd, arg):
             return
         if cmd in handlers:
@@ -68,6 +69,8 @@ class UserCommands:
             return None
         if kind == "sj":
             return await self.subjects_callback(chat, message_id, user, arg, lang)
+        if kind == "fm":
+            return await self.formula_callback(chat, message_id, user, arg, lang)
         if kind == "add":
             await self.cmd_sheet(chat, user, "")
             return None
@@ -128,6 +131,8 @@ class UserCommands:
                 ["/sheets", tr(lang, "your sheets: check, unfollow", "твои таблицы: проверить, отписаться")],
                 ["/subjects", tr(lang, "subjects: several sheets of one course as one",
                                  "предметы: несколько таблиц одного курса как одна")],
+                ["/formula", tr(lang, "a subject's grade formula, as the teacher wrote it",
+                                "формула оценки предмета, как у преподавателя")],
                 *([["/group", tr(lang, "your group: you follow its shared sheets", "твоя группа и её общие таблицы")]]
                   if self.groups.all() else []),
                 ["/quiet", tr(lang, "quiet hours", "тихие часы")],

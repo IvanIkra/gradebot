@@ -86,12 +86,20 @@ create table if not exists subjects (     -- sheets of one course read as one: a
     tg_id integer references users(tg_id) on delete cascade,  -- ... or by this user, for the sheets they follow
     name text not null,             -- its hashtag too, at most 10 characters
     formula text,                   -- how its grade is made, as the teacher writes it; null: none given
+    tree text,                      -- the formula as formula.py evaluates it (JSON)
     created_at text not null
 );
 create table if not exists subject_sheets (   -- in a scope (a group, a user) a sheet is in one subject at most
     subject integer not null references subjects(id) on delete cascade,
     sheet integer not null references sheets(id) on delete cascade,
     primary key (subject, sheet)
+);
+create table if not exists subject_formulas (   -- a user's own formula of a subject: it wins over the subject's
+    tg_id integer not null references users(tg_id) on delete cascade,
+    subject integer not null references subjects(id) on delete cascade,
+    formula text not null,
+    tree text not null,
+    primary key (tg_id, subject)
 );
 create table if not exists sheet_requests (   -- sheets new to the bot that a user asked for, waiting for the owner
     id integer primary key,
@@ -196,6 +204,7 @@ UPGRADES = (
     ("sheet_requests", "course", "text not null default ''"),
     ("grade_items", "label_ru", "text"),
     ("grade_events", "label_ru", "text"),
+    ("subjects", "tree", "text"),
 )
 FIRST_GROUP = "group"   # the group the shared sheets of a database from before groups go to, with every user
 

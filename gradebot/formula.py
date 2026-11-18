@@ -3,7 +3,9 @@
 The tree is JSON: `{"nodes": {name: node}, "final": node}`. Named nodes («Накоп») are shown by name and used with
 `ref`. A node is one of:
 
-- `{"type": "part", "name", "agg", "k", "count", "works": [{"key", "weight"}]}`: works of a kind, 0-10. `agg`:
+- `{"type": "part", "name", "agg", "k", "count", "works": [{"key", "weight"}], "match": [prefix]}`: works of a
+  kind, 0-10; a work of the plan in no part's `works` joins the first part one of whose `match` its label starts
+  with (a homework added after the formula was laid out). `agg`:
   `mean`; `best` (the mean of the `k` best); `weighted` (by each work's weight); `points` (by each work's maximum,
   as the sum of points over the sum of maximums). `count`: how many works the part will have when the formula says
   so; the plan may know fewer yet.
@@ -156,9 +158,20 @@ class Formula:
 
     def __post_init__(self) -> None:
         planned = {work["key"]: work for work in self.plan}
-        for part in parts(self.tree):
+        found = parts(self.tree)
+        listed = {work["key"] for part in found for work in part.get("works") or []}
+        joined: dict[str, list[dict]] = {}
+        for work in self.plan:
+            if work["key"] in listed:
+                continue
+            labels = [(work.get(name) or "").casefold() for name in ("label_ru", "label")]
+            part = next((p for p in found if any(label.startswith(prefix.casefold()) for prefix in p.get("match") or []
+                                                 if prefix for label in labels)), None)
+            if part is not None:
+                joined.setdefault(part["name"], []).append({"key": work["key"]})
+        for part in found:
             works = []
-            for work in part.get("works") or []:
+            for work in [*(part.get("works") or []), *joined.get(part["name"], [])]:
                 key = work["key"]
                 if key not in planned and key not in self.grades:
                     continue  # a work the sheet no longer has
@@ -290,7 +303,7 @@ def describe(tree: dict, lang: str) -> list[str]:
         kind = node["type"]
         if kind == "part":
             agg = node.get("agg", "mean")
-            note = tr(lang, f" ({node['k']} best)", f" ({node['k']} лучших)") if agg == "best" else \
+            note = tr(lang, f" (best {node['k']})", f" (лучшие {node['k']})") if agg == "best" else \
                 tr(lang, " (by points)", " (по баллам)") if agg == "points" else \
                 tr(lang, " (weighted)", " (с весами)") if agg == "weighted" else ""
             return node["name"] + note
@@ -318,24 +331,26 @@ def describe(tree: dict, lang: str) -> list[str]:
     return [*lines, tr(lang, "Final = ", "Итог = ") + text(tree["final"])]
 
 
-def warnings(tree: dict, plan: list[dict]) -> list[tuple[str, str]]:
-    """What a person should look at before saving: (kind, detail). `weights`: a sum whose weights (bonuses aside)
-    are not 1; `empty`: a part with no works yet; `outside`: a work of the subject in no part."""
-    out: list[tuple[str, str]] = []
+def warnings(tree: dict, plan: list[dict]) -> list[tuple[str, str, float | None]]:
+    """What a person should look at before saving: (kind, name, number). `weights`: a sum (its name, "" for an
+    unnamed one) whose weights, bonuses aside, add up to the number, not 1; `empty`: a part with no works yet;
+    `outside`: a work of the subject (its label) in no part."""
+    out: list[tuple[str, str, float | None]] = []
     names = {id(node): name for name, node in (tree.get("nodes") or {}).items()}
     for node in nodes(tree):
         if node["type"] == "sum":
             total = sum(t["weight"] for t in node["terms"] if not t.get("bonus"))
             if abs(total - 1) > WEIGHTS_OFF:
-                out.append(("weights", f"{names.get(id(node), '')} {number(round(total, 4))}".strip()))
+                out.append(("weights", names.get(id(node), ""), round(total, 4)))
     planned = {work["key"] for work in plan}
     used = set()
+    laid = Formula(tree, plan, {})
     for part in parts(tree):
-        keys = {work["key"] for work in part.get("works") or []} & planned
+        keys = {work.key for work in laid.works(part["name"])} & planned
         used |= keys
         if not keys:
-            out.append(("empty", part["name"]))
+            out.append(("empty", part["name"], None))
     for work in plan:
         if work["key"] not in used:
-            out.append(("outside", work.get("label_ru") or work["label"]))
+            out.append(("outside", work.get("label_ru") or work["label"], None))
     return out
