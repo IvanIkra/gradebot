@@ -44,7 +44,7 @@ def test_details_buttons_and_alignment():
         ("Обновить", "rf"), ("Открыть", "https://example.com/?a=1&b=2"))
     assert doc.rich() == (
         '<details open><summary>Матан · 1</summary><table bordered striped compact><tr><th>Задание</th>'
-        '<th align="right">Оценка</th></tr><tr><td><mark>ДЗ 1</mark></td><td align="right"><b>8</b></td></tr>'
+        '<th align="right">Оценка</th></tr><tr><td><b><u>ДЗ 1</u></b></td><td align="right"><b>8</b></td></tr>'
         '</table><tg-button-row><tg-button type="callback_data" data="wr:1" style="link">Неверно</tg-button>'
         '</tg-button-row></details><tg-button-row><tg-button type="callback_data" data="rf">Обновить</tg-button>'
         '<tg-button type="url" url="https://example.com/?a=1&amp;b=2">Открыть</tg-button></tg-button-row>')
@@ -160,7 +160,7 @@ async def test_grades_view_marks_the_new_ones_and_refreshes_in_place(bot, api, f
     edited = api.last(IVAN)
     assert edited["method"] == "editMessageText" and api.calls[-2][1]["message_id"] == 321
     assert "<details open><summary>Матанализ · оценок: 2 · новых: 1</summary>" in edited["text"]
-    assert "<mark>Quiz 1</mark>" in edited["text"] and "<mark><b>9</b></mark>" in edited["text"]
+    assert "<b><u>Quiz 1</u></b>" in edited["text"] and "<b><u>9</u></b>" in edited["text"]
 
     await bot.handle(callback(IVAN, "grades"))  # «All grades» under a notification: a new message
     assert api.last(IVAN)["method"] == "sendRichMessage"
@@ -186,7 +186,7 @@ async def test_a_long_grades_view_folds_the_old_tables(bot, api, followed, clock
     monkeypatch.setattr(rich, "MAX_BLOCKS", 30)
     await bot.handle(message(IVAN, "/grades"))
     text = api.last(IVAN)["text"]
-    assert "<mark>Quiz 1</mark>" in text and "Lab 1" not in text and "только там, где есть новые" in text
+    assert "<b><u>Quiz 1</u></b>" in text and "Lab 1" not in text and "только там, где есть новые" in text
 
 
 async def test_a_complaint_reaches_the_owner_once_a_day(bot, api, followed, clock):

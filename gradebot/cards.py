@@ -40,8 +40,8 @@ def heading(sheet: dict) -> list[str]:
 
 
 def grade_cell(row: dict, new: bool = False) -> str:
-    value = b(score(row["value"]))
-    text = join(mark(value) if new else value, f" {row['bonus']:+g}" if row["bonus"] else "")
+    value = mark(score(row["value"])) if new else b(score(row["value"]))
+    text = join(value, f" {row['bonus']:+g}" if row["bonus"] else "")
     return text
 
 

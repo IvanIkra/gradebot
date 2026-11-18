@@ -44,7 +44,8 @@ def code(text: str) -> Html:
 
 
 def mark(text: str) -> Html:
-    return Html(f"<mark>{esc(text)}</mark>")
+    """Something new: bold and underlined. Not <mark>: Telegram paints it pale yellow under white text on phones."""
+    return Html(f"<b><u>{esc(text)}</u></b>")
 
 
 def link(text: str, url: str) -> Html:
@@ -171,7 +172,7 @@ class Doc:
             elif kind == "details":
                 inner = rest[1].plain()
                 out.append(f"<b>{rest[0]}</b>" + (f"\n{inner}" if inner else ""))
-        return "\n\n".join(part.replace("<mark>", "<u>").replace("</mark>", "</u>") for part in out)
+        return "\n\n".join(out)
 
 
 def cell(tag: str, content: str, align: list[str | None], n: int) -> str:
