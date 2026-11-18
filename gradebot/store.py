@@ -65,6 +65,16 @@ create table if not exists sheets (
     error_since text,               -- failing since
     told integer not null default 0 -- failing for 12 hours was told to the owner and the followers
 );
+create table if not exists sheet_works (    -- every work the laid-out tabs of a sheet have, graded or not yet
+    sheet integer not null references sheets(id) on delete cascade,
+    key text not null,              -- as grade_items.key
+    tab text not null,
+    label text not null,
+    label_ru text,
+    max real not null,
+    position integer not null,      -- in sheet order
+    primary key (sheet, key)
+);
 create table if not exists group_sheets (   -- the shared sheets of a group: everyone in it follows them
     grp integer not null references groups(id) on delete cascade,
     sheet integer not null references sheets(id) on delete cascade,

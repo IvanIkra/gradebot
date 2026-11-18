@@ -146,6 +146,38 @@ class Item:
     label_ru: str = ""      # the label in Russian; "" when the layout has none
 
 
+@dataclass(frozen=True)
+class Planned:
+    """A work a laid-out tab has a column for, graded for someone or not yet: what a formula is made of."""
+    key: str
+    tab: str
+    label: str
+    label_ru: str
+    max: float
+
+
+def work_key(tab: Tab, col: str, header_rows: list[int]) -> tuple[str, str]:
+    """(key, header) of a work's column: the key is its place, not its label."""
+    header = tab.column_header(col, header_rows) if col else ""
+    return f"{tab.title}|{col}|{header}", header
+
+
+def plan(tab: Tab, spec: dict) -> list[Planned]:
+    """Every work of a laid-out tab, in sheet order, whoever is graded in it."""
+    if spec.get("skip"):
+        return []
+    works, keys = [], set()
+    for it in spec.get("items") or []:
+        key, _ = work_key(tab, it.get("column"), spec.get("header_rows") or [])
+        maximum = number(it.get("max")) or 10.0
+        if key in keys or maximum <= 0:
+            continue
+        keys.add(key)
+        works.append(Planned(key, tab.title, " ".join(str(it.get("label") or "").split()),
+                             " ".join(str(it.get("label_ru") or "").split()), maximum))
+    return works
+
+
 def label(item: dict, lang: str) -> str:
     """A work's label in the user's language: the Russian one when there is one."""
     return (item.get("label_ru") or item["label"]) if lang == "ru" else item["label"]
@@ -159,8 +191,7 @@ def extract(row: Row, spec: dict, start: int = 0) -> list[Item]:
     for it in spec.get("items") or []:
         col = it.get("column")
         raw = number(row.cells.get(col))
-        header = row.tab.column_header(col, header_rows) if col else ""
-        key = f"{row.tab.title}|{col}|{header}"
+        key, header = work_key(row.tab, col, header_rows)
         if raw is None or key in keys:
             continue
         maximum = number(it.get("max")) or 10.0

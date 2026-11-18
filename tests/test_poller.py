@@ -287,3 +287,9 @@ async def test_a_sheet_that_breaks_the_read_does_not_stop_the_others(google, pol
     assert [r.error for r in reads] == ["broken: RuntimeError", None]
     assert sheets.get(reads[0].sheet["id"])["error"] == "broken: RuntimeError"
     assert {r.sheet["id"] for r in reads} == {two, other["id"]} and len(calls) == 2
+
+
+async def test_the_plan_has_every_work_graded_or_not(google, poller, two, sheets):
+    await poller.poll()
+    assert [(w["tab"], w["label_ru"], w["max"]) for w in sheets.plan(two)] == [
+        ("ДЗ-1А", "ДЗ 1А", 7), ("Квизы", "Квиз 1", 10), ("Квизы", "Квиз 2", 10)]   # quiz 2: zeros, not graded yet

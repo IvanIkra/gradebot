@@ -208,6 +208,19 @@ class Sheets:
                               "where u.tg_id = ? and s.sheet = ?", (tg_id, sheet)).fetchone()
         return row["student"] if row else None
 
+    def set_plan(self, sheet: int, works: list) -> None:
+        """The sheet's works as its laid-out tabs have them now (layout.Planned), all of them in their order."""
+        with self.db:
+            self.db.execute("delete from sheet_works where sheet = ?", (sheet,))
+            self.db.executemany("insert into sheet_works(sheet, key, tab, label, label_ru, max, position) "
+                                "values(?, ?, ?, ?, ?, ?, ?)",
+                                [(sheet, w.key, w.tab, w.label, w.label_ru or None, w.max, n)
+                                 for n, w in enumerate(works)])
+
+    def plan(self, sheet: int) -> list[dict]:
+        return [dict(row) for row in self.db.execute(
+            "select * from sheet_works where sheet = ? order by position", (sheet,))]
+
     def set_title(self, sheet: int, title: str) -> None:
         with self.db:
             self.db.execute("update sheets set title = ? where id = ?", (title, sheet))

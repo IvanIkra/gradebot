@@ -208,6 +208,9 @@ class Poller:
                 user.tabs, user.items = len(found), self.grades.count(user.tg_id, sheet["id"])
             else:
                 self.grades.failed(user.tg_id, sheet["id"], user.error)
+        # Every work of the laid-out tabs, graded for someone or not yet: what a subject's formula is made of.
+        self.sheets.set_plan(sheet["id"], [work for tab in tabs if tab.title in specs
+                                           for work in layouts.plan(tab, specs[tab.title])])
         unread = tuple(title for title, spec in specs.items() if spec.get("failed"))
         back = self.sheets.read_ok(sheet["id"])
         return SheetRead(self.sheets.get(sheet["id"]) or sheet, back=back, users=users, unread=unread)
