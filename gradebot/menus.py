@@ -2,22 +2,26 @@
 
 USER_COMMANDS = {
     "en": [("grades", "your grades"), ("sheets", "your sheets"), ("sheet", "follow a Google Sheet"),
+           ("subjects", "subjects: sheets joined"),
            ("group", "your group"), ("name", "your full name"),
            ("quiet", "quiet hours"), ("lang", "language"), ("feedback", "write to the owner"), ("help", "commands"),
            ("stop", "erase your data and leave")],
     "ru": [("grades", "твои оценки"), ("sheets", "твои таблицы"), ("sheet", "подписаться на таблицу"),
+           ("subjects", "предметы: таблицы вместе"),
            ("group", "твоя группа"), ("name", "ФИО"),
            ("quiet", "тихие часы"), ("lang", "язык"), ("feedback", "написать владельцу"), ("help", "команды"),
            ("stop", "удалить свои данные и уйти")],
 }
 OWNER_COMMANDS = {
     "en": [("invite", "an invite code"), ("codes", "open codes"), ("users", "users"),
-           ("groups", "groups"), ("groupsheet", "the groups' shared sheets"), ("rename", "a sheet's short name"),
+           ("groups", "groups"), ("groupsheet", "the groups' shared sheets"), ("subjects", "the groups' subjects"),
+           ("rename", "a sheet's short name"),
            ("relayout", "lay a sheet out again"), ("status", "sheets, users, Haiku"),
            ("interval", "how often the sheets are read"), ("limits", "the limits of the groups' admins"),
            ("help", "commands")],
     "ru": [("invite", "код приглашения"), ("codes", "действующие коды"), ("users", "пользователи"),
-           ("groups", "группы"), ("groupsheet", "общие таблицы групп"), ("rename", "короткое имя таблицы"),
+           ("groups", "группы"), ("groupsheet", "общие таблицы групп"), ("subjects", "предметы групп"),
+           ("rename", "короткое имя таблицы"),
            ("relayout", "разметить таблицу заново"),
            ("status", "таблицы, пользователи, Haiku"), ("interval", "как часто читать таблицы"),
            ("limits", "лимиты админов групп"), ("help", "команды")],

@@ -12,7 +12,8 @@ makes a user their group's admin or takes it back,
 `rl:<sheet>` lays a sheet out again, `st` redraws
 /status, `iv:<minutes>` sets how often the sheets are read, `fa:<user>` answers a user's /feedback, `al:u.<people>`
 and `al:d.<days>` set the shared limits of the groups' admins' codes, `al:<user>` shows an admin's own,
-`al:<user>.u.<people>` and `al:<user>.d.<days>` set them, `al:<user>.r` drops them for the shared ones.
+`al:<user>.u.<people>` and `al:<user>.d.<days>` set them, `al:<user>.r` drops them for the shared ones; `sj:…` are
+/subjects' (subjects.py).
 """
 
 import datetime as dt
@@ -69,6 +70,8 @@ class OwnerCommands:
             await self.cmd_interval(chat, arg, lang)
         elif cmd == "/limits":
             await self.cmd_limits(chat, arg, lang)
+        elif cmd == "/subjects":
+            await self.cmd_subjects(chat, None, arg, lang)
         else:
             await self.api.send(chat, self.owner_help(lang))
 
@@ -76,6 +79,8 @@ class OwnerCommands:
                              lang: str) -> str | None:
         """`message_id`: the message to redraw, None to answer in a new one."""
         number = int(arg) if arg.isdigit() else None
+        if kind == "sj":
+            return await self.subjects_callback(chat, message_id, None, arg, lang)
         if kind == "rq" and number:
             await self.show(chat, message_id, self.revoke_view(number, lang))
         elif kind == "rv" and number:
@@ -225,6 +230,9 @@ class OwnerCommands:
                                       "follows it; without one, its title in Google",
                                 "короткое имя и хэштег таблицы, до 10 символов, у всех её подписчиков; без имени — "
                                 "название таблицы в Google")],
+                            ["/subjects " + tr(lang, "[group]", "[группа]"),
+                             tr(lang, "a group's subjects: several sheets of one course as one",
+                                "предметы группы: несколько таблиц одного курса как одна")],
                             ["/relayout " + tr(lang, "<link>", "<ссылка>"),
                              tr(lang, "lay a sheet's tabs out again", "разметить вкладки таблицы заново")],
                             ["/status", tr(lang, "sheets, errors, users, Haiku spending",

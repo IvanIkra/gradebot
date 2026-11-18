@@ -70,6 +70,19 @@ create table if not exists group_sheets (   -- the shared sheets of a group: eve
     sheet integer not null references sheets(id) on delete cascade,
     primary key (grp, sheet)
 );
+create table if not exists subjects (     -- sheets of one course read as one: a group's, or a user's own
+    id integer primary key,
+    grp integer references groups(id) on delete cascade,      -- run by the group's admin and the owner ...
+    tg_id integer references users(tg_id) on delete cascade,  -- ... or by this user, for the sheets they follow
+    name text not null,             -- its hashtag too, at most 10 characters
+    formula text,                   -- how its grade is made, as the teacher writes it; null: none given
+    created_at text not null
+);
+create table if not exists subject_sheets (   -- in a scope (a group, a user) a sheet is in one subject at most
+    subject integer not null references subjects(id) on delete cascade,
+    sheet integer not null references sheets(id) on delete cascade,
+    primary key (subject, sheet)
+);
 create table if not exists sheet_requests (   -- sheets new to the bot that a user asked for, waiting for the owner
     id integer primary key,
     tg_id integer not null references users(tg_id) on delete cascade,

@@ -24,6 +24,7 @@ from .poller import Poller
 from .rich import Doc, Html, b, code, join
 from .sheets import GOOGLE_SHEET, Sheets
 from .store import Store
+from .subjects import SubjectCommands, Subjects
 from .telegram import BotApi, TelegramError
 from .users import UserCommands, group_buttons
 
@@ -50,13 +51,14 @@ def full_name(user: dict) -> str:
     return " ".join(filter(None, (user.get("first_name"), user.get("last_name")))) or str(user["id"])
 
 
-class Bot(GroupAdmins, OwnerCommands, UserCommands, ReadNotices, OwnerNews, Dialogs):
+class Bot(GroupAdmins, OwnerCommands, UserCommands, SubjectCommands, ReadNotices, OwnerNews, Dialogs):
     def __init__(self, api: BotApi, store: Store, access: Access, sheets: Sheets, owner_id: int, zone: dt.tzinfo,
                  username: str = "", now: Callable[[], dt.datetime] = clock.now_utc):
         self.api, self.store, self.access, self.sheets = api, store, access, sheets
         self.owner_id, self.zone, self.username, self.now = owner_id, zone, username, now
         self.grades = Grades(store, now)
         self.groups = Groups(store, sheets, now)
+        self.subjects = Subjects(store, now)
         self.poller: Poller | None = None   # set by the service; without it nothing is read
         self.budget: Budget | None = None   # set by the service: the owner's /status shows the spending
         self._tasks: set[asyncio.Task] = set()

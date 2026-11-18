@@ -4,7 +4,7 @@ Callbacks: `grades` sends /grades, `rf` redraws it in place, `wr:<sheet>` compla
 `ck:<sheet>` reads a sheet now, `us:<sheet>` unfollows it, `cr:<request>` cancels a request for a sheet waiting for
 the owner, `gp:<group>` moves the user to a group (0: none) from /group, `gj:<group>` from the first message,
 `add` asks for a sheet to follow, `qt:<hours|off>` sets quiet hours, `lg:<en|ru>` the language, `stop` and `stop!`
-cancel and confirm /stop.
+cancel and confirm /stop; `sj:…` are /subjects' (subjects.py).
 """
 
 import datetime as dt
@@ -45,7 +45,8 @@ class UserCommands:
             cmd = "/sheet"
         handlers = {"/grades": self.cmd_grades, "/name": self.cmd_name, "/sheet": self.cmd_sheet,
                     "/sheets": self.cmd_sheets, "/group": self.cmd_group, "/quiet": self.cmd_quiet,
-                    "/lang": self.cmd_lang, "/feedback": self.cmd_feedback, "/stop": self.cmd_stop}
+                    "/lang": self.cmd_lang, "/feedback": self.cmd_feedback, "/stop": self.cmd_stop,
+                    "/subjects": lambda chat, user, arg: self.cmd_subjects(chat, user, arg, lang)}
         if await self.admin_command(chat, user, cmd, arg):
             return
         if cmd in handlers:
@@ -65,6 +66,8 @@ class UserCommands:
         if kind == "grades":
             await self.cmd_grades(chat, user, "")
             return None
+        if kind == "sj":
+            return await self.subjects_callback(chat, message_id, user, arg, lang)
         if kind == "add":
             await self.cmd_sheet(chat, user, "")
             return None
@@ -123,6 +126,8 @@ class UserCommands:
                  tr(lang, "follow a Google Sheet; a link sent alone does the same",
                     "подписаться на таблицу Google; можно просто прислать ссылку")],
                 ["/sheets", tr(lang, "your sheets: check, unfollow", "твои таблицы: проверить, отписаться")],
+                ["/subjects", tr(lang, "subjects: several sheets of one course as one",
+                                 "предметы: несколько таблиц одного курса как одна")],
                 *([["/group", tr(lang, "your group: you follow its shared sheets", "твоя группа и её общие таблицы")]]
                   if self.groups.all() else []),
                 ["/quiet", tr(lang, "quiet hours", "тихие часы")],
@@ -397,15 +402,20 @@ class UserCommands:
         if not sheets:
             return Doc().p(self.no_sheets(lang)).buttons(self.add_button(lang))
         found = []
-        for s in sheets:
-            problem = self.sheet_problem(s, lang) or \
-                (tr(lang, "Not read yet.", "Ещё не прочитана.") if s["baseline_at"] is None else "")
-            found.append((s, self.grades.items(user["tg_id"], s["id"]), problem))
+        for unit in self.subjects.units(user, sheets):
+            items, problems = [], []
+            for s in unit.sheets:
+                items += self.grades.items(user["tg_id"], s["id"])
+                problem = self.sheet_problem(s, lang) or \
+                    (tr(lang, "Not read yet.", "Ещё не прочитана.") if s["baseline_at"] is None else "")
+                if problem:
+                    problems.append(f"{sheet_name(s)}: {problem}" if unit.subject is not None else problem)
+            found.append((unit, items, problems))
         for tables in ("all", "new", "none"):
             doc = Doc().h(tr(lang, "Your grades", "Твои оценки"))
-            for s, items, problem in found:
+            for unit, items, problems in found:
                 table = tables == "all" or (tables == "new" and any(item["new"] for item in items))
-                doc.extend(grades_section(s, items, lang, problem, table))
+                doc.extend(grades_section(unit, items, lang, problems, table))
             if tables != "all":
                 doc.p(tr(lang, "The list is long: only sheets with new grades show their tables.",
                          "Список длинный: таблицы показаны только там, где есть новые оценки.")

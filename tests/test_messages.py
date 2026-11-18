@@ -9,6 +9,7 @@ from gradebot.layout import Item
 from gradebot.llm.budget import Budget
 from gradebot.llm.journal import Journal
 from gradebot.rich import Doc
+from gradebot.subjects import Unit
 from gradebot.telegram import TelegramError
 
 from .books import URL
@@ -97,7 +98,7 @@ def test_collapse_keeps_the_latest_with_the_first_previous():
 
 
 def test_news_is_split_when_it_does_not_fit(monkeypatch):
-    sheet = {"id": 1, "sheet_id": "x" * 25, "url": URL, "title": "Матанализ", "course": "Calc"}
+    sheet = Unit.of({"id": 1, "sheet_id": "x" * 25, "url": URL, "title": "Матанализ", "course": "Calc"})
     rows = [{**event(n, f"k{n}", 8, None), "ids": [n]} for n in range(12)]
     [(doc, ids)] = cards.news_messages([(sheet, rows), (sheet, rows[:1])], "ru")
     assert ids == [*range(12), 0] and doc.rich().count("<h3>") == 2

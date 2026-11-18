@@ -1,6 +1,7 @@
 """Grades as messages: new grades after a poll, and /grades.
 
-A sheet is a section headed by its title, linked to the sheet, and its course's hashtag; a work is a table row: its
+A unit (subjects.Unit) is a section: a sheet in no subject headed by its title, linked to the sheet, and its course's
+hashtag; a subject headed by its hashtag, its sheets linked under it. A work is a table row: its
 label in the user's language (without the course, the heading has it), the grade on 0-10 with the bonus, the sheet's
 own points when its scale is not 0-10, and the grade before for a changed one. Columns empty in the whole section are
 left out.
@@ -12,6 +13,8 @@ from .i18n import tr
 from .layout import label
 from .rich import Doc, b, join, link, mark
 from .sheets import course_of
+from .sheets import name as sheet_name
+from .subjects import Unit
 
 RIGHT = "right"
 
@@ -33,10 +36,21 @@ def points(value: float) -> str:
     return f"{round(value, 2):g}"
 
 
-def heading(sheet: dict) -> list[str]:
-    """The parts of a section's heading: the title linked to the sheet, and the course's hashtag."""
-    tag = hashtag(course_of(sheet))
+def heading(unit: Unit) -> list[str]:
+    """The parts of a section's heading: a sheet's title linked to it and the course's hashtag; a subject's
+    hashtag."""
+    tag = hashtag(unit.tag)
+    if unit.subject is not None:
+        return [tag or unit.name]
+    sheet = unit.sheets[0]
     return [link(sheet["title"] or course_of(sheet), sheet["url"]), *([" ", tag] if tag else [])]
+
+
+def sheet_links(doc: Doc, unit: Unit) -> Doc:
+    """Under a subject's heading: its sheets, linked."""
+    if unit.subject is not None:
+        doc.p(join(*[link(s["title"] or sheet_name(s), s["url"]) for s in unit.sheets], sep=" · "))
+    return doc
 
 
 def grade_cell(row: dict, new: bool = False) -> str:
@@ -83,30 +97,30 @@ def collapse(events: list[dict]) -> tuple[list[dict], list[int]]:
     return rows, dropped
 
 
-def news_section(sheet: dict, rows: list[dict], lang: str) -> Doc:
-    return works_table(Doc().h(*heading(sheet)), rows, lang, with_previous=True)
+def news_section(unit: Unit, rows: list[dict], lang: str) -> Doc:
+    return works_table(sheet_links(Doc().h(*heading(unit)), unit), rows, lang, with_previous=True)
 
 
 def all_grades_button(lang: str) -> tuple:
     return (tr(lang, "All grades", "Все оценки"), "grades")
 
 
-def news_messages(sections: list[tuple[dict, list[dict]]], lang: str) -> list[tuple[Doc, list[int]]]:
-    """(sheet, rows) -> as few messages as fit the limits, a section of a sheet whole when it fits alone, each with
+def news_messages(sections: list[tuple[Unit, list[dict]]], lang: str) -> list[tuple[Doc, list[int]]]:
+    """(unit, rows) -> as few messages as fit the limits, a section of a unit whole when it fits alone, each with
     the event ids it sends. Each ends with the «All grades» button."""
     def done(doc: Doc) -> Doc:
         return Doc(list(doc.blocks)).buttons(all_grades_button(lang))
 
-    def pieces(sheet: dict, rows: list[dict]) -> list[tuple[Doc, list[int]]]:
-        doc = news_section(sheet, rows, lang)
+    def pieces(unit: Unit, rows: list[dict]) -> list[tuple[Doc, list[int]]]:
+        doc = news_section(unit, rows, lang)
         if len(rows) == 1 or done(doc).fits():
             return [(doc, [i for row in rows for i in row["ids"]])]
         half = len(rows) // 2
-        return pieces(sheet, rows[:half]) + pieces(sheet, rows[half:])
+        return pieces(unit, rows[:half]) + pieces(unit, rows[half:])
 
     messages: list[tuple[Doc, list[int]]] = []
-    for sheet, rows in sections:
-        for doc, ids in pieces(sheet, rows) if rows else []:
+    for unit, rows in sections:
+        for doc, ids in pieces(unit, rows) if rows else []:
             if messages and done(Doc(list(messages[-1][0].blocks)).extend(doc)).fits():
                 messages[-1][0].extend(doc)
                 messages[-1][1].extend(ids)
@@ -118,20 +132,24 @@ def news_messages(sections: list[tuple[dict, list[dict]]], lang: str) -> list[tu
 # --- /grades -------------------------------------------------------------------------------------
 
 
-def grades_section(sheet: dict, items: list[dict], lang: str, problem: str | None, table: bool = True) -> Doc:
-    """A sheet in /grades: details headed «Calc · 12 grades · 2 new», open when some are new; the table of its
-    grades and the «Report a mistake» button for the layout inside."""
+def grades_section(unit: Unit, items: list[dict], lang: str, problems: list[str], table: bool = True) -> Doc:
+    """A unit in /grades: details headed «Calc · 12 grades · 2 new», open when some are new; a subject's sheets
+    linked, the table of its grades and a «Report a mistake» button for each sheet's layout inside."""
     new = sum(item["new"] for item in items)
-    summary = " · ".join([sheet["title"] or course_of(sheet),
-                          tr(lang, f"{len(items)} grades", f"оценок: {len(items)}"),
+    summary = " · ".join([unit.name, tr(lang, f"{len(items)} grades", f"оценок: {len(items)}"),
                           *([tr(lang, f"{new} new", f"новых: {new}")] if new else [])])
-    inner = Doc()
-    if problem:
+    inner = sheet_links(Doc(), unit)
+    for problem in problems:
         inner.p(problem)
     if items and table:
         works_table(inner, items, lang, with_previous=False)
-    elif not items and not problem:
+    elif not items and not problems:
         inner.p(tr(lang, "No grades yet.", "Оценок пока нет."))
     if items:
-        inner.buttons((tr(lang, "Report a mistake", "Сообщить об ошибке"), f"wr:{sheet['id']}", "link"))
+        report = tr(lang, "Report a mistake", "Сообщить об ошибке")
+        graded = {item["sheet"] for item in items}
+        for sheet in unit.sheets:
+            if sheet["id"] in graded:
+                inner.buttons((report if len(graded) == 1 else f"{report}: {sheet_name(sheet)}",
+                               f"wr:{sheet['id']}", "link"))
     return Doc().details(summary, inner, open_=bool(new))

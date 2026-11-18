@@ -208,6 +208,8 @@ class GroupAdmins:
             ["/groupsheet " + tr(lang, "[link]", "[ссылка]"),
              tr(lang, "the group's shared sheets: everyone in it follows them",
                 "общие таблицы группы: на них подписаны все в ней")],
+            ["/subjects", tr(lang, "the group's subjects: several shared sheets of one course as one",
+                             "предметы группы: несколько общих таблиц одного курса как одна")],
             ["/news", tr(lang, "how the group's news come: a quiet digest, a message each, or none",
                          "как присылать новости группы: тихой сводкой, каждую отдельно или не присылать")]]).p(
             i(tr(lang, "Sheets your group's members ask for come to you to approve, as to the owner.",

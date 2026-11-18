@@ -1,10 +1,10 @@
 """What the bot tells unasked after the sheets are read: new grades, how a requested read went, a sheet that cannot
 be read for 12 hours and its return, and the LLM limit to the owner.
 
-New grades go to every user in one message a poll, more only when it does not fit the limits of a rich
-message; each message marks its own grades sent, so a failure halfway sends nothing twice. Within the user's quiet
-hours it comes without a sound. Grades not sent (Telegram failed, the user blocked the bot) wait for the next poll
-while they are within the window of a week.
+New grades go to every user in one message a poll, a section per subject or sheet (subjects.Unit), more only when
+it does not fit the limits of a rich message; each message marks its own grades sent, so a failure halfway sends
+nothing twice. Within the user's quiet hours it comes without a sound. Grades not sent (Telegram failed, the user
+blocked the bot) wait for the next poll while they are within the window of a week.
 
 A user is told after a read they asked for (a new sheet, a new full name) and after the first read of a sheet for
 them, which may follow a group sheet the owner added: one message for every sheet of the poll.
@@ -101,11 +101,15 @@ class ReadNotices:
             for event in events:
                 by_sheet.setdefault(event["sheet"], []).append(event)
             sections = []
-            for sheet_id, sheet_events in by_sheet.items():
-                rows, dropped = collapse(sheet_events)
-                self.grades.sent(dropped, 0)  # back where they were: nothing to tell
-                if (sheet := self.sheets.get(sheet_id)) is not None:
-                    sections.append((sheet, rows))
+            for unit in self.subjects.units(user, self.sheets.followed(tg_id)):
+                rows = []
+                for sheet in unit.sheets:
+                    if sheet["id"] in by_sheet:
+                        sheet_rows, dropped = collapse(by_sheet[sheet["id"]])
+                        self.grades.sent(dropped, 0)  # back where they were: nothing to tell
+                        rows += sheet_rows
+                if rows:
+                    sections.append((unit, rows))
             silent = profile.is_quiet(user, self.now(), self.zone)
             for doc, ids in news_messages(sections, user["lang"]):
                 msg_id = await self.tell(user, doc, silent=silent)
