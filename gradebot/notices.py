@@ -35,6 +35,9 @@ def explain(error: str, lang: str) -> str:
     if what == poller.DOWNLOAD:
         return tr(lang, f"cannot be downloaded ({detail}), I'll try again at the next read",
                   f"не скачивается ({detail}), попробую при следующем чтении")
+    if what == poller.BROKEN:
+        return tr(lang, "its file cannot be read, I'll try again at the next read",
+                  "её файл не читается, попробую при следующем чтении")
     if what == poller.LAYOUT:
         return tr(lang, "its tabs could not be laid out, I'll try again at the next read",
                   "не удалось разметить вкладки, попробую при следующем чтении")

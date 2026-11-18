@@ -268,3 +268,22 @@ async def test_a_new_interval_applies_at_once_and_requests_keep_the_schedule(pol
     await asyncio.sleep(0.3)
     task.cancel()
     assert polls[:2] == [True, False] and polls.count(True) >= 3
+
+
+async def test_a_sheet_that_breaks_the_read_does_not_stop_the_others(google, poller, two, bot, access, sheets,
+                                                                     monkeypatch):
+    add_user(access, 3, "Сидоров Пётр")
+    other, _ = sheets.follow(3, "https://docs.google.com/spreadsheets/d/2ZyXwVuTsRqPoNmLkJiHgFeDcBa")
+    load, calls = poller_module.workbook.load, []
+
+    def first_fails(data):
+        calls.append(1)
+        if len(calls) == 1:
+            raise RuntimeError("boom")
+        return load(data)
+
+    monkeypatch.setattr(poller_module.workbook, "load", first_fails)
+    reads = await poller.poll()
+    assert [r.error for r in reads] == ["broken: RuntimeError", None]
+    assert sheets.get(reads[0].sheet["id"])["error"] == "broken: RuntimeError"
+    assert {r.sheet["id"] for r in reads} == {two, other["id"]} and len(calls) == 2

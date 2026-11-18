@@ -1,7 +1,7 @@
 import pytest
 
 from gradebot import layout, workbook
-from gradebot.workbook import NotWorkbook
+from gradebot.workbook import BrokenWorkbook, NotWorkbook
 
 from .books import ANNA, IVAN, spec
 from .books import workbook as book
@@ -82,3 +82,16 @@ def test_the_sample_row_has_numbers():
     empty = workbook.Row(parsed[0], 9, "B", {"A": "—"})
     ivan = workbook.find(parsed, IVAN)[0][0]
     assert layout.sample([empty, ivan]) is ivan and layout.sample([empty]) is empty
+
+
+def test_a_tab_that_cannot_be_parsed():
+    import io
+    import zipfile
+
+    src, out = zipfile.ZipFile(io.BytesIO(book())), io.BytesIO()
+    with zipfile.ZipFile(out, "w") as z:
+        for info in src.infolist():
+            data = src.read(info)
+            z.writestr(info, data[:len(data) // 2] if info.filename.startswith("xl/worksheets/") else data)
+    with pytest.raises(BrokenWorkbook):
+        workbook.load(out.getvalue())

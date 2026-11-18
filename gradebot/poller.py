@@ -8,7 +8,8 @@ name asks for a read at once (`request`): only those sheets are read then, and t
 went.
 
 A sheet fails as a whole on the download, on a file that is no workbook (a sheet closed to the link gives a login
-page) and on the layout (the network, the limit); its grades stay as they were, and it is read again at the next
+page) or cannot be parsed, on the layout (the network, the limit) and on any other error, which must not stop the
+other sheets; its grades stay as they were, and it is read again at the next
 poll. A reader whose row is on no tab fails alone; a tab with their name in two rows is left out for them, and they
 are told so. A sheet failing for 12 hours is told
 once to the owner and its followers, and once more when it reads again (`SheetRead.stale`, `back`).
@@ -43,7 +44,8 @@ MINUTE = 60                 # seconds; tests make it shorter
 TIMEOUT = 120               # seconds for a download
 
 # Errors are kept as "<kind>: <detail>"; the kinds are what the bot explains to a user.
-DOWNLOAD, CLOSED, LAYOUT, BUDGET = "download", "closed", "layout", "budget"   # of a sheet
+DOWNLOAD, CLOSED, BROKEN = "download", "closed", "broken"                    # of a sheet
+LAYOUT, BUDGET = "layout", "budget"
 NO_ROW, AMBIGUOUS = "no_row", "ambiguous"                                     # of a user's rows
 
 
@@ -131,7 +133,11 @@ class Poller:
         if wanted:
             async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=TIMEOUT)) as session:
                 for sheet in wanted:
-                    read = await self.read(session, sheet)
+                    try:
+                        read = await self.read(session, sheet)
+                    except Exception as e:  # one sheet must not stop the others
+                        log.exception("reading sheet %s failed", sheet["sheet_id"])
+                        read = self._failed(sheet, f"{BROKEN}: {type(e).__name__}")
                     read.requested = frozenset(requested.get(sheet["id"], ()))
                     results.append(read)
         if results and self.on_read is not None:
@@ -156,6 +162,8 @@ class Poller:
             return self._failed(sheet, f"{DOWNLOAD}: HTTP {e.status} {e.message}".strip())
         except workbook.NotWorkbook as e:
             return self._failed(sheet, f"{CLOSED}: {e}")
+        except workbook.BrokenWorkbook as e:
+            return self._failed(sheet, f"{BROKEN}: {e}")
         except (aiohttp.ClientError, TimeoutError, OSError) as e:
             return self._failed(sheet, f"{DOWNLOAD}: {type(e).__name__} {e}".strip())
 

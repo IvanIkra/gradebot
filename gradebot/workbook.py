@@ -22,6 +22,10 @@ class NotWorkbook(ValueError):
     """A sheet closed to the link gives a login page instead of an xlsx."""
 
 
+class BrokenWorkbook(ValueError):
+    """An xlsx that opens but whose tabs cannot be parsed."""
+
+
 def norm(text: str) -> str:
     """Lower case, ё as е, punctuation but "-" as spaces: "ИВАНОВ  Иван," -> "иванов иван"."""
     text = text.lower().replace("ё", "е")
@@ -84,7 +88,8 @@ class Row:
 
 
 def load(data: bytes) -> list[Tab]:
-    """The visible tabs of a workbook. NotWorkbook when the data is none."""
+    """The visible tabs of a workbook. NotWorkbook when the data is none, BrokenWorkbook when a tab cannot be
+    parsed (the rows are read lazily, after the file opened)."""
     from openpyxl import load_workbook
 
     try:
@@ -100,6 +105,8 @@ def load(data: bytes) -> list[Tab]:
             top = [(i + 1, row) for i, raw in enumerate(cells[:TOP_ROWS])
                    if (row := {column(j): text(c) for j, c in enumerate(raw) if text(c)})]
             tabs.append(Tab(ws.title, cells, top))
+    except Exception as e:  # XML, zipfile and openpyxl errors alike
+        raise BrokenWorkbook(f"broken workbook ({type(e).__name__})") from None
     finally:
         wb.close()
     return tabs
