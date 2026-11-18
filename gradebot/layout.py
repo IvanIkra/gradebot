@@ -41,7 +41,9 @@ Not graded works: points for single problems (headers like 1, 2, 3a, №1, 4*), 
 sums, averages, final or cumulative grades (ИТОГ, Итог, Средний балл, Сумма, НК, ИК), attendance, activity
 points, group, comments, penalties.
 When a work has per-problem columns plus a total column for that work (for example "Балл"), the work is
-that total column. When columns are just numbers, the tab name says what the work is (tab "ДЗ-1А" is
+that total column. When the work also has its own grade column next to the points (for example "Сумма" then
+"Оценка"), the work is the grade column with max 10: that is the grade the student gets, and it may be scaled
+or capped differently from the points. When columns are just numbers, the tab name says what the work is (tab "ДЗ-1А" is
 homework 1A, "КР1" is test 1, "Э1" is exam 1).
 
 Return skip=true when the tab is a summary or statistics tab (Итоги, Статистика), an archive (old),
