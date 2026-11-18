@@ -42,33 +42,33 @@ def graded(bot, matan, a1):  # noqa: F811
 
 
 async def test_a_goal_and_what_it_needs(bot, api, graded):
-    matan, _, _ = graded
+    sid, _, _ = graded
     await bot.handle(say(BOB, "/goal"))
     await bot.handle(callback(BOB, buttons(api.last(BOB))["Матан"]))
     view = api.last(BOB)
     assert "Цели пока нет" in view["text"] and "Итог будет от 0 до 9 · прогноз 7" in view["text"]
     await bot.handle(callback(BOB, buttons(view)["8"]))
     view = api.last(BOB)
-    assert bot.subjects.goal(BOB, matan) == 8 and "Твоя цель: <b>8</b>" in view["text"]
+    assert bot.subjects.goal(BOB, sid) == 8 and "Твоя цель: <b>8</b>" in view["text"]
     # ДЗ: the best of 8 and x; КР 6; the exam x: round(0.6·(0.5·x + 3) + 0.4·x) reaches 8 from 8.2
     assert "до 8 нужно в среднем 8.2 на оставшемся" in view["text"]
 
     await bot.handle(say(BOB, "/grades"))
     grades = api.last(BOB)
     assert "Итог будет от 0 до 9 · прогноз 7 · до 8 нужно в среднем 8.2" in grades["text"]
-    assert buttons(grades)["Цель"] == f"gl:s.{matan}" and buttons(grades)["Формула"] == f"fm:s.{matan}"
+    assert buttons(grades)["Цель"] == f"gl:s.{sid}" and buttons(grades)["Формула"] == f"fm:s.{sid}"
 
     await bot.handle(callback(BOB, buttons(view)["Без цели"]))
-    assert bot.subjects.goal(BOB, matan) is None
+    assert bot.subjects.goal(BOB, sid) is None
 
 
 async def test_new_grades_carry_the_line_only_with_a_goal(bot, api, graded, clock):
-    matan, calc, _ = graded
+    sid, calc, _ = graded
     clock.advance(minutes=30)
     bot.grades.record(BOB, calc, [item("T|B|1", "ДЗ", "ДЗ 1", 9)], 1)
     await bot.send_grades()
     assert "Итог будет" not in api.last(BOB)["text"]
-    bot.subjects.set_goal(BOB, matan, 7)
+    bot.subjects.set_goal(BOB, sid, 7)
     clock.advance(minutes=30)
     bot.grades.record(BOB, calc, [item("T|B|1", "ДЗ", "ДЗ 1", 10)], 1)
     await bot.send_grades()
