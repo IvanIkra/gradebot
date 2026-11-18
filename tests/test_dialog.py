@@ -11,7 +11,8 @@ async def test_invite_step_by_step(bot, api, access):
     await bot.handle(message(OWNER, "/invite"))
     question = api.last(OWNER)
     assert "Какая группа?" in question["text"]
-    assert buttons(question) == {"A1": f"an:{a1}", "Без группы: выберет сам": "an:", "Отмена": "ac"}
+    assert buttons(question) == {"A1": f"an:{a1}", "Новая группа": "an:+", "Без группы: выберет сам": "an:",
+                                 "Отмена": "ac"}
     await press(bot, OWNER, str(a1))
     assert "Сколько человек" in api.last(OWNER)["text"]
     await bot.handle(message(OWNER, "много"))                       # wrong: asked again with the reason
@@ -28,6 +29,28 @@ async def test_invite_step_by_step(bot, api, access):
     [invite] = access.open_invites()
     assert (invite["grp"], invite["uses"], invite["access_until"]) == (a1, 3, "2026-12-31T20:59:00+00:00")
     assert invite_code(reply) and OWNER not in bot.asks
+
+
+async def test_invite_to_a_new_group(bot, api, access):
+    bot.groups.create("A1")
+    await bot.handle(message(OWNER, "/invite"))
+    await press(bot, OWNER, "+")
+    assert "Имя группы" in api.last(OWNER)["text"]
+    await bot.handle(message(OWNER, "A1"))                          # taken: asked again
+    assert "Такая группа уже есть" in api.last(OWNER)["text"]
+    await bot.handle(message(OWNER, "B2"))
+    assert "Сколько человек" in api.last(OWNER)["text"]
+    for value in ("x5", "", "", ""):                                # people, lifetime, access, note
+        await press(bot, OWNER, value)
+    reply = api.last(OWNER)["text"]
+    assert "Группа <b>B2</b> создана" in reply and "в группу <b>B2</b>" in reply and invite_code(reply)
+    [invite] = access.open_invites()
+    assert invite["grp"] == bot.groups.find("B2")["id"]
+
+
+async def test_new_group_offered_with_no_groups(bot, api):
+    await bot.handle(message(OWNER, "/invite"))
+    assert buttons(api.last(OWNER)) == {"Новая группа": "an:+", "Без группы: выберет сам": "an:", "Отмена": "ac"}
 
 
 async def test_a_command_or_an_hour_drops_the_question(bot, api, clock, access):

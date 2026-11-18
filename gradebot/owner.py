@@ -15,6 +15,7 @@ Callbacks: `rq:<invite>` asks to revoke a code and `rv:<invite>` revokes it, `co
 import datetime as dt
 import logging
 import re
+from dataclasses import replace
 from urllib.parse import quote
 
 from . import clock, poller
@@ -32,6 +33,7 @@ log = logging.getLogger(__name__)
 
 USERS_VIEW = "owner.users"  # kv: {"page", "query"} of the users list, kept while the owner pages through it
 USERS_PAGE = 10
+NEW_GROUP = "+"     # the answer of the "New group" button under /invite's question of the group
 
 
 def matches(user: dict, query: str) -> bool:
@@ -236,7 +238,8 @@ class OwnerCommands:
         days = tr(lang, "Like 3d or 12h, up to 365 days.", "Например 3д или 12ч, до 365 дней.")
         access = tr(lang, "Like +30d, or a date: +31.12.", "Например +30д или дата: +31.12.")
         return [
-            self.group_step(lang, tr(lang, "No group: they pick one", "Без группы: выберет сам")),
+            self.group_step(lang, tr(lang, "No group: they pick one", "Без группы: выберет сам"), new=True),
+            replace(self.group_name_step(lang), name="new_group", when=lambda data: data.get("group") == NEW_GROUP),
             Step("people", plain(tr(lang, "How many people may come in with the code? ",
                                     "Сколько человек может войти по коду? ") + people),
                  check=token("uses", lambda v: v if v.startswith(("x", "х")) else f"x{v}"),
@@ -266,9 +269,17 @@ class OwnerCommands:
         if data.get("access"):
             access = invite_args(data["access"], lambda _: None, self.now(), self.zone)
             args["access_days"], args["access_until"] = access["access_days"], access["access_until"]
-        args["group"] = self.groups.get(int(data["group"])) if data.get("group") else None
         args["note"] = data.get("note", "")
-        await self.api.send(chat, self.make_invite(args, lang))
+        made = Doc()
+        if data.get("group") == NEW_GROUP:
+            try:
+                args["group"] = self.groups.create(data["new_group"])
+            except GroupError:  # made by another way while the questions were asked
+                args["group"] = self.groups.find(data["new_group"])
+            made.p(tr(lang, "Group ", "Группа "), b(args["group"]["name"]), tr(lang, " is made.", " создана."))
+        else:
+            args["group"] = self.groups.get(int(data["group"])) if data.get("group") else None
+        await self.api.send(chat, made.extend(self.make_invite(args, lang)))
 
     def make_invite(self, args: dict, lang: str) -> Doc:
         group = args.pop("group")
@@ -293,9 +304,12 @@ class OwnerCommands:
         return doc.buttons((tr(lang, "Send to a chat", "Отправить в чат"),
                             "https://t.me/share/url?url=" + quote(url, safe="")))
 
-    def group_step(self, lang: str, skip: str | None = None) -> Step:
-        """A group: a button for each, or its name typed. Asked only when there are groups."""
+    def group_step(self, lang: str, skip: str | None = None, new: bool = False) -> Step:
+        """A group: a button for each, or its name typed. Asked only when there are groups, or with `new`: then
+        a button for a new group too, whose name the step after it asks for."""
         def check(value: str, data: dict) -> str:
+            if new and value == NEW_GROUP:
+                return value
             group = self.groups.get(int(value)) if value.isdigit() else self.groups.find(value)
             if group is None:
                 raise ValueError(value)
@@ -303,8 +317,9 @@ class OwnerCommands:
 
         return Step("group", lambda data: Doc().p(tr(lang, "Which group?", "Какая группа?")), check=check,
                     error=lambda lang, e: tr(lang, "No such group.", "Такой группы нет."),
-                    choices=lambda data: [(g["name"], str(g["id"])) for g in self.groups.all()],
-                    skip=lambda data: skip, when=lambda data: bool(self.groups.all()))
+                    choices=lambda data: [(g["name"], str(g["id"])) for g in self.groups.all()] +
+                    ([(tr(lang, "New group", "Новая группа"), NEW_GROUP)] if new else []),
+                    skip=lambda data: skip, when=lambda data: new or bool(self.groups.all()))
 
     def sheet_step(self, lang: str) -> Step:
         """A sheet the bot reads: a button for each, or its link."""
