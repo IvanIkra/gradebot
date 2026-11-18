@@ -289,8 +289,8 @@ class OwnerCommands:
         doc = Doc().p(tr(lang, "Code", "Код"), f" «{note}»" if note else "",
                       *([tr(lang, " to the group ", " в группу "), b(group["name"])] if group else []), ": ",
                       self.people(invite, lang), tr(lang, ", works until ", ", действует до "),
-                      self.when(invite["expires_at"]), tr(lang, ", access ", ", доступ "), self.term(invite, lang),
-                      ":")
+                      self.when(invite["expires_at"], lang), tr(lang, ", access ", ", доступ "),
+                      self.term(invite, lang), ":")
         doc.p(code(new))
         if not self.username:
             return doc.p(i(tr(lang, "Tap the code to copy it. It is shown only this once: only its hash is kept.",
@@ -376,7 +376,7 @@ class OwnerCommands:
         if invite["access_days"]:
             return tr(lang, "for ", "на ") + n_days(lang, invite["access_days"])
         if invite["access_until"]:
-            return tr(lang, "until ", "до ") + self.when(invite["access_until"])
+            return tr(lang, "until ", "до ") + self.when(invite["access_until"], lang)
         return tr(lang, "for good", "бессрочный")
 
     def codes_view(self, lang: str) -> Doc:
@@ -385,20 +385,20 @@ class OwnerCommands:
             return Doc().p(tr(lang, "No open codes. ", "Действующих кодов нет. "), "/invite")
         doc = Doc().h(tr(lang, "Open codes", "Действующие коды")).table(
             [tr(lang, "Note", "Пометка"), tr(lang, "Group", "Группа"), tr(lang, "People", "Люди"),
-             tr(lang, "Access", "Доступ"), tr(lang, "Expires", "Истекает")],
+             tr(lang, "Access", "Доступ"), tr(lang, "Expires", "Истекает") + ", " + self.tz(lang)],
             [[inv["note"] or "—", inv["group_name"] or "—",
               f"{inv['used']}/{inv['uses'] or '∞'}", self.term(inv, lang), self.when(inv["expires_at"])]
              for inv in invites], [None, None, "right", None, None])
         revoke = tr(lang, "Revoke ", "Отозвать ")
         for inv in invites[:30]:
-            doc.buttons((revoke + (inv["note"] or self.when(inv["created_at"])), f"rq:{inv['id']}", "danger"))
+            doc.buttons((revoke + (inv["note"] or self.when(inv["created_at"], lang)), f"rq:{inv['id']}", "danger"))
         return doc
 
     def revoke_view(self, invite_id: int, lang: str) -> Doc:
         found = next((inv for inv in self.access.open_invites() if inv["id"] == invite_id), None)
         if found is None:
             return self.codes_view(lang)
-        note = found["note"] or self.when(found["created_at"])
+        note = found["note"] or self.when(found["created_at"], lang)
         return (Doc().p(tr(lang, "Revoke the code ", "Отозвать код "), b(note), "?")
                 .buttons((tr(lang, "Yes, revoke", "Да, отозвать"), f"rv:{invite_id}", "danger"),
                          (tr(lang, "Cancel", "Отмена"), "codes")))
@@ -421,8 +421,9 @@ class OwnerCommands:
                   tr(lang, "No users yet. ", "Пользователей пока нет. "), "/invite")
             return doc.buttons(*([(tr(lang, "Everyone", "Все"), "ua")] if query else []))
         doc.table([tr(lang, "Telegram", "Telegram"), tr(lang, "Full name", "ФИО"), tr(lang, "Group", "Группа"),
-                   tr(lang, "Access until", "Доступ до")],
-                  [[self.who(u), u["student"] or "—", u["group_name"] or "—", self.until(u, lang)] for u in shown])
+                   tr(lang, "Access until", "Доступ до") + ", " + self.tz(lang)],
+                  [[self.who(u), u["student"] or "—", u["group_name"] or "—", self.until(u, lang, zone=False)]
+                   for u in shown])
         for start in range(0, len(shown), 2):
             doc.buttons(*[(u["tg_name"], f"uc:{u['tg_id']}") for u in shown[start:start + 2]])
         if pages > 1:
@@ -444,7 +445,7 @@ class OwnerCommands:
             [tr(lang, "Full name", "ФИО"), user["student"] or "—"],
             [tr(lang, "Group", "Группа"), self.group_cell(user, lang)],
             [tr(lang, "Rank", "Ранг"), self.rank(user, lang)],
-            [tr(lang, "Joined", "С нами с"), self.when(user["joined_at"])],
+            [tr(lang, "Joined", "С нами с"), self.when(user["joined_at"], lang)],
             [tr(lang, "Access until", "Доступ до"), self.until(user, lang)],
             [tr(lang, "Code", "Код"), user["note"] or "—"],
             [tr(lang, "Sheets", "Таблицы"), ", ".join(sheet_name(s) for s in sheets) or "—"],
@@ -462,11 +463,11 @@ class OwnerCommands:
                     (tr(lang, "Delete", "Удалить"), f"du:{tg_id}", "danger"))
         return doc.buttons((tr(lang, "« Users", "« Пользователи"), "users"))
 
-    def until(self, user: dict, lang: str) -> str:
+    def until(self, user: dict, lang: str, zone: bool = True) -> str:
         if not user["expires_at"]:
             return "∞"
         ended = tr(lang, " (ended)", " (закончился)") if self.access.expired(user) else ""
-        return self.when(user["expires_at"]) + ended
+        return self.when(user["expires_at"], lang if zone else None) + ended
 
     def access_view(self, user: dict, lang: str) -> Doc:
         doc = Doc().p(tr(lang, "Access of ", "Доступ "), self.who(user), ": ", b(self.until(user, lang)), ". ",
@@ -483,7 +484,7 @@ class OwnerCommands:
         await self.show(chat, message_id, self.user_card(tg_id, lang))
         ulang = user["lang"]
         await self.tell(user, Doc().p(tr(ulang, "The owner prolonged your access: ", "Владелец продлил доступ: "),
-                                      b(tr(ulang, "until ", "до ") + self.when(user["expires_at"]))
+                                      b(tr(ulang, "until ", "до ") + self.when(user["expires_at"], ulang))
                                       if user["expires_at"] else b(tr(ulang, "for good", "бессрочно")), "."))
         if user["student"]:  # back after it ended: read what was missed
             self.read_soon(None, [s["id"] for s in self.sheets.followed(tg_id)])
@@ -858,12 +859,12 @@ class OwnerCommands:
         if sheets:
             never = tr(lang, "never", "ни разу")
             doc.table([tr(lang, "Sheet", "Таблица"), tr(lang, "Followers", "Подписаны"),
-                       tr(lang, "Read", "Прочитана"), tr(lang, "State", "Состояние")],
+                       tr(lang, "Read", "Прочитана") + ", " + self.tz(lang), tr(lang, "State", "Состояние")],
                       [[link(sheet_name(s), s["url"]), str(s["followers"]),
                         self.when(s["ok_at"]) if s["ok_at"] else never,
                         tr(lang, "failing", "ошибка") if s["error"] else "ok"] for s in sheets],
                       [None, "right", None, None])
-            errors = [f"{sheet_name(s)}: {s['error']} ({tr(lang, 'since', 'с')} {self.when(s['error_since'])})"
+            errors = [f"{sheet_name(s)}: {s['error']} ({tr(lang, 'since', 'с')} {self.when(s['error_since'], lang)})"
                       for s in sheets if s["error"]]
             if errors:
                 doc.quote("\n".join(errors), expandable=True)

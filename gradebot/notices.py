@@ -128,7 +128,8 @@ class ReadNotices:
             return Doc().p(tr(lang, "The sheet ", "Таблица "), title, tr(lang, " is read again.", " снова читается."))
         why = detail if detail is not None else explain(read.error or "", lang)
         return Doc().p(tr(lang, "The sheet ", "Таблица "), title,
-                       tr(lang, " cannot be read since ", " не читается с "), self.when(read.stale), ": ", why, ". ",
+                       tr(lang, " cannot be read since ", " не читается с "), self.when(read.stale, lang), ": ",
+                       why, ". ",
                        tr(lang, "Its grades are not updated.", "Оценки из неё не обновляются."))
 
     def budget_notice(self, level: Level, spent: float, limit: float) -> None:

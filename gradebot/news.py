@@ -32,7 +32,8 @@ class OwnerNews:
 
     async def news(self, *parts: str, buttons: tuple[Button, ...] = ()) -> None:
         """One line of news for the owner, with its buttons: into the open digest, or a new silent one."""
-        entry = {"text": join(i(self.when(clock.utc_iso(self.now()))), " · ", *parts), "buttons": list(buttons)}
+        moment = self.when(clock.utc_iso(self.now()), self.owner_lang)
+        entry = {"text": join(i(moment), " · ", *parts), "buttons": list(buttons)}
         async with self._news_lock:
             state = self.store.get_json(NEWS)
             if state is not None:

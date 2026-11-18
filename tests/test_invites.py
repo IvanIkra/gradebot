@@ -70,7 +70,7 @@ async def test_access_for_a_while(bot, api, access, sheets, clock):
     await bot.handle(message(OWNER, "/invite +30д Петя"))
     assert "доступ на 30 дней" in api.last(OWNER)["text"]
     await bot.handle(message(PETR, f"/start {invite_code(api.last(OWNER)['text'])}"))
-    assert "Доступ открыт до <b>09.12 15:00</b>" in api.sent(PETR)[-2]["text"]
+    assert "Доступ открыт до <b>09.12 15:00 МСК</b>" in api.sent(PETR)[-2]["text"]
     assert "доступ до 09.12 15:00" in api.last(OWNER)["text"]
     await bot.handle(message(PETR, "/name Петров Пётр"))
     sheets.follow(PETR, "https://docs.google.com/spreadsheets/d/1CalcExampleSheetId_0123456789abc")
@@ -82,7 +82,7 @@ async def test_access_for_a_while(bot, api, access, sheets, clock):
     await bot.check_access()
     await bot.check_access()                              # told once
     warning = api.last(PETR)
-    assert "Доступ к боту закончится <b>09.12 15:00</b>" in warning["text"]
+    assert "Доступ к боту закончится <b>09.12 15:00 МСК</b>" in warning["text"]
     assert len([m for m in api.sent(PETR) if "закончится" in m["text"]]) == 1
 
     clock.advance(days=1)
@@ -113,13 +113,13 @@ async def test_access_for_a_while(bot, api, access, sheets, clock):
 
     await bot.handle(callback(OWNER, buttons(request)["+7 дней"]))  # from the end, or from now when it has ended
     assert access.user(PETR)["expires_at"] == "2026-12-16T13:00:00+00:00"
-    assert "Владелец продлил доступ: <b>до 16.12 16:00</b>" in api.last(PETR)["text"]
+    assert "Владелец продлил доступ: <b>до 16.12 16:00 МСК</b>" in api.last(PETR)["text"]
     assert len(sheets.to_read()) == 1
     await bot.handle(message(OWNER, "/users"))
     await bot.handle(callback(OWNER, buttons(api.last(OWNER))["Пётр"]))
     await bot.handle(callback(OWNER, buttons(api.last(OWNER))["Доступ"]))
     view = api.last(OWNER)
-    assert "Доступ Пётр (@petr_example): <b>16.12 16:00</b>" in view["text"]
+    assert "Доступ Пётр (@petr_example): <b>16.12 16:00 МСК</b>" in view["text"]
     assert access.user(PETR)["prolong_asked"] == 0           # prolonged: may ask again next time
     await bot.handle(callback(OWNER, buttons(view)["Бессрочно"]))
     assert access.user(PETR)["expires_at"] is None and "бессрочно" in api.last(PETR)["text"]

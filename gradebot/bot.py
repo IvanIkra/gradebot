@@ -64,8 +64,17 @@ class Bot(OwnerCommands, UserCommands, ReadNotices, OwnerNews, Dialogs):
     def owner_lang(self) -> str:
         return self.store.get_json(OWNER_LANG, "en")
 
-    def when(self, iso: str) -> str:
-        return clock.parse(iso).astimezone(self.zone).strftime("%d.%m %H:%M")
+    def when(self, iso: str, lang: str | None = None) -> str:
+        """A moment in the bot's time zone; with `lang`, the zone named after it (a table names it in its header)."""
+        text = clock.parse(iso).astimezone(self.zone).strftime("%d.%m %H:%M")
+        return f"{text} {self.tz(lang)}" if lang else text
+
+    def tz(self, lang: str) -> str:
+        """The bot's time zone as shown with times: MSK, or else its offset from UTC."""
+        if getattr(self.zone, "key", "") == "Europe/Moscow":
+            return tr(lang, "MSK", "МСК")
+        offset = dt.datetime.now(self.zone).utcoffset() or dt.timedelta()
+        return f"UTC{offset.total_seconds() / 3600:+g}"
 
     @staticmethod
     def who(user: dict) -> Html:
@@ -161,7 +170,7 @@ class Bot(OwnerCommands, UserCommands, ReadNotices, OwnerNews, Dialogs):
             self.access.told(user["tg_id"], 1)
             lang = user["lang"]
             await self.tell(user, Doc().p(tr(lang, "Your access to the bot ends ", "Доступ к боту закончится "),
-                                          b(self.when(user["expires_at"])), ". ",
+                                          b(self.when(user["expires_at"], lang)), ". ",
                                           tr(lang, "The owner may prolong it.", "Владелец может его продлить."))
                             .buttons((tr(lang, "Ask to prolong", "Попросить продлить"), "pr")))
         for user in ended:
@@ -186,7 +195,7 @@ class Bot(OwnerCommands, UserCommands, ReadNotices, OwnerNews, Dialogs):
 
     def prolong_doc(self, user: dict, lang: str, what: str) -> Doc:
         """«Name has access until …» with the buttons that prolong it."""
-        doc = Doc().p(self.who(user), what, self.when(user["expires_at"]), ".")
+        doc = Doc().p(self.who(user), what, self.when(user["expires_at"], lang), ".")
         return doc.buttons(*self.prolong_buttons(user, lang))
 
     @staticmethod
@@ -284,7 +293,7 @@ class Bot(OwnerCommands, UserCommands, ReadNotices, OwnerNews, Dialogs):
                 count = f" ({invite['used']}/{invite['uses'] or '∞'})" if invite["uses"] != 1 else ""
                 await self.news(self.who(user), tr(owner, " came in with the code", ": вход по коду"), note, count,
                                 *([tr(owner, ", group ", ", группа "), group["name"]] if group else []),
-                                *([tr(owner, ", access until ", ", доступ до "), self.when(user["expires_at"])]
+                                *([tr(owner, ", access until ", ", доступ до "), self.when(user["expires_at"], owner)]
                                   if user["expires_at"] else []),
                                 buttons=(self.delete_button(user, owner),))
                 return
@@ -308,7 +317,7 @@ class Bot(OwnerCommands, UserCommands, ReadNotices, OwnerNews, Dialogs):
                .p(tr(lang, "I'll send you new grades from the Google Sheets of your courses as soon as they appear.",
                      "Я буду присылать новые оценки из таблиц Google твоих курсов, как только они появятся.")))
         if expires:
-            doc.p(tr(lang, "Your access lasts until ", "Доступ открыт до "), b(self.when(expires)), ".")
+            doc.p(tr(lang, "Your access lasts until ", "Доступ открыт до "), b(self.when(expires, lang)), ".")
         if group:
             doc.p(tr(lang, "Your group: ", "Твоя группа: "), b(group["name"]), ". ",
                   tr(lang, f"You follow its shared sheets: {followed}. The list is in /sheets.",

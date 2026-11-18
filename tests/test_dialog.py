@@ -25,7 +25,8 @@ async def test_invite_step_by_step(bot, api, access):
     assert "Пометка для себя" in api.last(OWNER)["text"]
     await bot.handle(message(OWNER, "семинар"))
     reply = api.last(OWNER)["text"]
-    assert "Код «семинар» в группу <b>A1</b>: вошли 0 из 3, действует до 16.11 15:00, доступ до 31.12 23:59" in reply
+    assert ("Код «семинар» в группу <b>A1</b>: вошли 0 из 3, действует до 16.11 15:00 МСК, "
+            "доступ до 31.12 23:59 МСК") in reply
     [invite] = access.open_invites()
     assert (invite["grp"], invite["uses"], invite["access_until"]) == (a1, 3, "2026-12-31T20:59:00+00:00")
     assert invite_code(reply) and OWNER not in bot.asks

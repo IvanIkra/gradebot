@@ -343,8 +343,8 @@ class UserCommands:
         never = tr(lang, "not yet", "ещё нет")
         rows = [[link(sheet_name(s), s["url"]), self.when(s["read_at"]) if s["read_at"] else never,
                  str(self.grades.count(user["tg_id"], s["id"])), self.sheet_problem(s, lang)] for s in sheets]
-        header = [tr(lang, "Sheet", "Таблица"), tr(lang, "Read", "Прочитана"), tr(lang, "Grades", "Оценок"),
-                  tr(lang, "Problem", "Ошибка")]
+        header = [tr(lang, "Sheet", "Таблица"), tr(lang, "Read", "Прочитана") + ", " + self.tz(lang),
+                  tr(lang, "Grades", "Оценок"), tr(lang, "Problem", "Ошибка")]
         if not any(row[3] for row in rows):
             header, rows = header[:3], [row[:3] for row in rows]
         doc.h(tr(lang, "Your sheets", "Твои таблицы") + f" · {len(sheets)}").table(
@@ -439,7 +439,8 @@ class UserCommands:
 
     def quiet_view(self, user: dict) -> Doc:
         lang, hours = user["lang"], profile.hours(user)
-        doc = Doc().p(tr(lang, "Quiet hours: ", "Тихие часы: "), b(hours or tr(lang, "off", "выключены")), ". ",
+        doc = Doc().p(tr(lang, "Quiet hours: ", "Тихие часы: "),
+                      b(f"{hours} {self.tz(lang)}" if hours else tr(lang, "off", "выключены")), ". ",
                       tr(lang, "Grades then come at once, but without a sound.",
                          "В это время оценки приходят сразу, но без звука."))
         doc.p(tr(lang, "Other hours: send them, like ", "Другие часы — пришли их, например "), code("22-7"), ".")

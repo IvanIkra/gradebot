@@ -217,7 +217,7 @@ async def test_sheets_view_and_check(bot, api, followed):
     bot.poller = type("P", (), {"request": lambda self, sheet, tg_id=None: requested.append((sheet, tg_id))})()
     await bot.handle(message(IVAN, "/sheets"))
     view = api.last(IVAN)
-    assert "<th>Прочитана</th>" in view["text"] and "<td>09.11 15:00</td>" in view["text"]
+    assert "<th>Прочитана, МСК</th>" in view["text"] and "<td>09.11 15:00</td>" in view["text"]
     assert '<td align="right">1</td>' in view["text"] and "Ошибка" not in view["text"]
     assert buttons(view) == {"Проверить: Матанализ": f"ck:{followed}", "Отписаться: Матанализ": f"us:{followed}",
                              "Добавить таблицу": "add"}

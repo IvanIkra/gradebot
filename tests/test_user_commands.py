@@ -1,3 +1,5 @@
+from zoneinfo import ZoneInfo
+
 import pytest
 
 from gradebot.access import TRUSTED
@@ -66,16 +68,16 @@ async def test_sheets_follow_and_unfollow(bot, api, sheets, access, petr):
 async def test_quiet_hours(bot, api, access, petr):
     await bot.handle(message(PETR, "/quiet"))
     view = api.last(PETR)
-    assert "Тихие часы: <b>23:00–8:00</b>" in view["text"]
+    assert "Тихие часы: <b>23:00–8:00 МСК</b>" in view["text"]
     assert buttons(view) == {"Выключить": "qt:off"}
     await bot.handle(message(PETR, "21-6"))                     # other hours, typed after /quiet
-    assert "<b>21:00–6:00</b>" in api.last(PETR)["text"]
+    assert "<b>21:00–6:00 МСК</b>" in api.last(PETR)["text"]
     await bot.handle(message(PETR, "/quiet"))
     await bot.handle(callback(PETR, "qt:off"))
     assert (access.user(PETR)["quiet_from"], access.user(PETR)["quiet_to"]) == (None, None)
     assert buttons(api.last(PETR)) == {"23:00–8:00": "qt:23-8"}
     await bot.handle(message(PETR, "/quiet 22-7"))
-    assert "<b>22:00–7:00</b>" in api.last(PETR)["text"]
+    assert "<b>22:00–7:00 МСК</b>" in api.last(PETR)["text"]
     await bot.handle(message(PETR, "/quiet ночью"))
     assert "Часы вида 23-8 или off" in api.last(PETR)["text"]
     assert access.user(PETR)["quiet_from"] == 22
@@ -184,3 +186,11 @@ async def test_feedback_has_a_daily_limit(bot, api, petr, clock):
     clock.advance(days=1, minutes=1)
     await bot.handle(message(PETR, "/feedback ещё одна"))
     assert "ещё одна" in api.last(OWNER)["text"]
+
+
+def test_time_zone_named_with_times(bot):
+    assert bot.when("2026-11-16T12:00:00+00:00") == "16.11 15:00"
+    assert bot.when("2026-11-16T12:00:00+00:00", "ru") == "16.11 15:00 МСК"
+    assert bot.when("2026-11-16T12:00:00+00:00", "en") == "16.11 15:00 MSK"
+    bot.zone = ZoneInfo("Asia/Yekaterinburg")
+    assert bot.when("2026-11-16T12:00:00+00:00", "ru") == "16.11 17:00 UTC+5"
