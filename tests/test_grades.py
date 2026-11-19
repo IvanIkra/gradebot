@@ -112,3 +112,15 @@ def test_a_moved_zero_keeps_its_grade(grades, two, clock):
     clock.advance(hours=1)
     grades.record(ivan, sheet, [item("T|C|HW", "HW", 0, header="HW")], 1)   # a column inserted before it
     assert [(i["key"], i["value"]) for i in grades.items(ivan, sheet)] == [("T|C|HW", 0)]
+
+
+def test_a_header_that_changed_keeps_the_grade(grades, two, clock):
+    """A date or a maximum fixed in the header, or a layout asked again naming other header rows: same column."""
+    sheet, ivan, _ = two
+    grades.record(ivan, sheet, [item("T|C|ДЗ 1 · 12.09", "HW", 8, header="ДЗ 1 · 12.09"),
+                                item("T|D|ДЗ 2", "HW 2", 6, position=1, header="ДЗ 2")], 2)
+    clock.advance(hours=1)
+    grades.record(ivan, sheet, [item("T|C|ДЗ 1 · 19.09", "HW", 8, header="ДЗ 1 · 19.09"),
+                                item("T|D|ДЗ 2 / 10", "HW 2", 7, position=1, header="ДЗ 2 / 10")], 2)
+    assert [(e["key"], e["value"], e["previous"]) for e in grades.waiting(ivan)] == [("T|D|ДЗ 2 / 10", 7, None)]
+    assert [i["key"] for i in grades.items(ivan, sheet)] == ["T|C|ДЗ 1 · 19.09", "T|D|ДЗ 2 / 10"]

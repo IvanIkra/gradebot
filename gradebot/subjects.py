@@ -4,6 +4,11 @@ own one by that user, for the sheets they follow. In a scope (a group, a user) a
 For a user, a followed sheet belongs to their own subject that has it, else to their group's, else to none: then it
 is a unit of its own, as before subjects. /grades and the messages of new grades show a section per unit.
 
+A course's sheets often repeat a work: the group's sheet and the lecturer's gradebook both have «ДЗ 1». Within a
+unit, a grade with the label (spaces and case aside), the grade and the bonus of one on another tab or sheet is a
+copy: shown and told once (`drop_copies`), and a formula counts works of one label once (`merge_copies`). Copies
+whose grades differ are both shown: the difference is worth seeing.
+
 Callbacks `sj:<action>.<arg>`: `h` the root of /subjects, `l.<scope>` the subjects of a scope (`g<group>`,
 `u<user>`), `n.<scope>` a new one, `o.<subject>` its card, `p.<subject>.<sheet>` puts a sheet in it and
 `t.<subject>.<sheet>` takes one out, `r.<subject>` renames it, `d.<subject>` asks to delete it and `x.<subject>`
@@ -12,6 +17,7 @@ deletes it.
 
 import datetime as dt
 import json
+import re
 from collections.abc import Callable
 from dataclasses import dataclass, field
 
@@ -191,6 +197,51 @@ class Subjects:
 
 
 # --- /subjects -------------------------------------------------------------------------------------
+
+
+def work_label(item: dict) -> str:
+    """A work's label for telling copies: «ДЗ 1» and «дз1» are one."""
+    return re.sub(r"\s+", "", (item.get("label_ru") or item.get("label") or "").casefold())
+
+
+def place(item: dict) -> tuple:
+    """The sheet and the tab of a grade, an event (its key starts with the tab) or a planned work."""
+    return item["sheet"], item.get("tab") or item["key"].split("|", 1)[0]
+
+
+def drop_copies(items: list[dict], known: list[dict] = ()) -> tuple[list[dict], list[dict]]:
+    """(the items without copies, the copies): a copy has the label, the grade and the bonus of an item before it
+    or of a `known` one, on another tab or sheet. An item marked new passes it on to the one it copies."""
+    first: dict[tuple, dict] = {}
+    for item in known:
+        first.setdefault((work_label(item), item["value"], item["bonus"] or 0), item)
+    kept, copies = [], []
+    for item in items:
+        sign = (work_label(item), item["value"], item["bonus"] or 0)
+        original = first.get(sign)
+        if original is not None and place(original) != place(item):
+            if item.get("new"):
+                original["new"] = True
+            copies.append(item)
+            continue
+        first.setdefault(sign, item)
+        kept.append(item)
+    return kept, copies
+
+
+def merge_copies(plan: list[dict]) -> tuple[list[dict], dict[str, str]]:
+    """A subject's plan with each label once, on its first tab: (the plan, copy's key -> the key it copies)."""
+    first: dict[str, dict] = {}
+    kept, aliases = [], {}
+    for work in plan:
+        label = work_label(work)
+        original = first.get(label)
+        if label and original is not None and place(original) != place(work):
+            aliases[work["key"]] = original["key"]
+            continue
+        first.setdefault(label, work)
+        kept.append(work)
+    return kept, aliases
 
 
 def subject_key(item: dict) -> str:

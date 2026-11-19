@@ -24,7 +24,7 @@ from .llm.budget import BudgetExceeded
 from .llm.client import LLMError
 from .rich import Doc, b, code, i
 from .sheets import course_of
-from .subjects import SubjectError, scope_of, subject_name
+from .subjects import SubjectError, merge_copies, scope_of, subject_name
 
 log = logging.getLogger(__name__)
 
@@ -312,7 +312,7 @@ class FormulaCommands:
             await self.api.send(chat, tr(lang, "Reading formulas is off: the bot has no Haiku key.",
                                          "Разбор формул выключен: у бота нет ключа Haiku."))
             return
-        plan = self.subjects.plan(subject["id"])
+        plan, _ = merge_copies(self.subjects.plan(subject["id"]))   # a work the sheets repeat, once
         try:
             answer = await llm.json("formula", FORMULA_SYSTEM, prompt(text, plan), FORMULA_SCHEMA,
                                     max_tokens=MAX_TOKENS)

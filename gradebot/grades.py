@@ -6,7 +6,8 @@ the sheet, or a changed grade or bonus, is a new grade (grade_events), unless it
 any real grade means "not graded yet"). A grade that leaves the sheet (a tab hidden, the row gone from one tab, a
 cell cleared) is kept as gone, so its return with the same grade is no new grade, and with another one it is new with
 the grade before. A column moved by one inserted before it keeps its grade: matched by tab, header and grade among
-the works that left in the same read.
+the works that left in the same read. So does a column whose header changed (a date or a maximum fixed, a layout
+asked again that names other header rows): matched by tab, column and grade.
 
 Grades live as long as the subscription: unfollowing a sheet, leaving the bot or being deleted erases them (foreign
 keys), and a new full name erases all of the user's (`forget`), so the next read is a baseline again.
@@ -20,6 +21,11 @@ from .layout import Item
 from .store import Store
 
 WINDOW = dt.timedelta(days=7)   # new grades wait this long to be sent, and are marked new this long
+
+
+def column_of(tab: str, key: str) -> str:
+    """The column letter of a key «<tab>|<column>|<header>»; the tab is known, as it may hold «|» itself."""
+    return key[len(tab) + 1:].split("|", 1)[0]
 
 
 class Grades:
@@ -38,19 +44,34 @@ class Grades:
         keys = {item.key for item in items}
         # A column inserted before others shifts their letters and so their keys: a work that leaves one key in this
         # read and is found under another with the same tab, header and grade is the same work, not a new grade.
+        # A header that changed changes the key too: the same tab, column and grade is the same work.
         shifted: dict[tuple, list[dict]] = {}
+        renamed: dict[tuple, list[dict]] = {}
         for row in prev.values():
             if row["key"] not in keys and not row["gone"]:
                 shifted.setdefault((row["tab"], row["header"], row["value"], row["bonus"]), []).append(row)
+                renamed.setdefault((row["tab"], column_of(row["tab"], row["key"]), row["value"], row["bonus"]),
+                                   []).append(row)
         now, seen, moved = clock.utc_iso(self.now()), set(), set()
+
+        def left(candidates: list[dict] | None) -> dict | None:
+            """A work that left in this read and is not matched yet."""
+            while candidates:
+                row = candidates.pop()
+                if row["key"] not in moved:
+                    return row
+            return None
+
         with db:
             for item in items:
                 old = prev.get(item.key)
-                if old is None and (same := shifted.get((item.tab, item.header, item.value, item.bonus))):
-                    old = same.pop()
-                    moved.add(old["key"])
-                    db.execute("update grade_events set key = ? where tg_id = ? and sheet = ? and key = ?",
-                               (item.key, tg_id, sheet, old["key"]))
+                if old is None:
+                    old = left(shifted.get((item.tab, item.header, item.value, item.bonus))) or \
+                        left(renamed.get((item.tab, column_of(item.tab, item.key), item.value, item.bonus)))
+                    if old is not None:
+                        moved.add(old["key"])
+                        db.execute("update grade_events set key = ? where tg_id = ? and sheet = ? and key = ?",
+                                   (item.key, tg_id, sheet, old["key"]))
                 if item.value == 0 and not item.bonus and old is None:
                     continue  # a placeholder for "not graded yet"; a zero after a real grade is kept
                 seen.add(item.key)

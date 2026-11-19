@@ -186,7 +186,8 @@ class Poller:
             for tab in tabs:
                 in_tab = [row for found in rows.values() for row in found if row.tab is tab]
                 if in_tab:
-                    specs[tab.title] = await self.layouts.get(sid, tab, in_tab, budget)
+                    others = [other.title for other in tabs if other is not tab]
+                    specs[tab.title] = await self.layouts.get(sid, tab, in_tab, budget, others)
         except BudgetExceeded as e:
             return self._failed(sheet, f"{BUDGET}: {e}", users)
         except LLMError as e:

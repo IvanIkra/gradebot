@@ -10,13 +10,29 @@ Callbacks `gl:<action>.<arg>`: `s.<subject>` shows a subject's goal, `n.<sheet>`
 first, `v.<subject>.<goal>` sets the goal (0 drops it).
 """
 
+import copy
+
 from .cards import score
-from .formula import Formula, Outlook, outlook
+from .formula import Formula, Outlook, outlook, parts
 from .i18n import tr
 from .rich import Doc, b, i
-from .subjects import Unit, subject_key
+from .subjects import Unit, merge_copies, subject_key
 
 GOALS = range(4, 11)
+
+
+def aliased(tree: dict, aliases: dict[str, str]) -> dict:
+    """The tree with the works of its parts that copy another one replaced by it, each once."""
+    tree = copy.deepcopy(tree)
+    for part in parts(tree):
+        seen, works = set(), []
+        for work in part.get("works") or []:
+            key = aliases.get(work["key"], work["key"])
+            if key not in seen:
+                seen.add(key)
+                works.append({**work, "key": key})
+        part["works"] = works
+    return tree
 
 
 def outlook_text(view: Outlook, lang: str) -> str:
@@ -56,9 +72,13 @@ class GoalCommands:
         found = self.subjects.formula_for(user["tg_id"], sid)
         if found is None:
             return None
-        grades = {subject_key(item): item for sheet in self.subjects.sheets_of(sid)
-                  for item in self.grades.items(user["tg_id"], sheet)}
-        return Formula(found["tree"], self.subjects.plan(sid), grades)
+        plan, aliases = merge_copies(self.subjects.plan(sid))
+        grades: dict[str, dict] = {}
+        for item in sorted((item for sheet in self.subjects.sheets_of(sid)
+                            for item in self.grades.items(user["tg_id"], sheet)),
+                           key=lambda item: subject_key(item) in aliases):   # a work's own grade before a copy's
+            grades.setdefault(aliases.get(subject_key(item), subject_key(item)), item)
+        return Formula(aliased(found["tree"], aliases), plan, grades)
 
     def outlook_note(self, user: dict, sid: int, lang: str, goal_only: bool = False) -> str:
         """The line under a subject: the outlook; with `goal_only`, only when the user has a goal in it."""

@@ -6,10 +6,13 @@ Russian: a user sees the one of their language.
 
 A layout does not depend on the student, so it is one for everyone who follows the sheet: it is asked with the row of
 any follower that has numbers in the tab, and cached in kv by sheet, tab and label budget together with the text of
-the header rows it named. While that text stays, the layout stands, whatever the other rows do; a changed header asks
-again. With no header named, any change in the top rows asks again. An answer the model cannot give (refused, cut) is
-cached as a skipped tab until the top rows change: the same input would fail again at every poll. A failure on the
-way (the network, the limit) is the caller's: the sheet is read again at the next poll.
+the header rows it named and the names of the other tabs. While those stay, the layout stands, whatever the other
+rows do; a changed header, or a tab added or renamed, asks again. The other tabs are shown so that a summary tab
+that copies works with tabs of their own (a group's gradebook with a column «Коллок» next to a tab «Коллоквиум 1»)
+leaves those columns out: each work is counted once, on its own tab. With no header named, any change in the top
+rows asks again. An answer the model cannot give (refused, cut) is cached as a skipped tab until the top rows
+change: the same input would fail again at every poll. A failure on the way (the network, the limit) is the
+caller's: the sheet is read again at the next poll.
 """
 
 import hashlib
@@ -25,7 +28,7 @@ log = logging.getLogger(__name__)
 
 LABEL_BUDGET = 23       # characters of "<course> <work>": "Calc HW 3"
 MIN_BUDGET = 8
-LAYOUT_VERSION = 2      # bump when the prompt changes, to drop the cached layouts (2: label_ru)
+LAYOUT_VERSION = 3      # bump when the prompt changes, to drop the cached layouts (2: label_ru, 3: other tabs)
 PREFIX = "layout:"      # kv: + the sheet's Google id, ":", the tab's hash, ":", the budget
 MAX_TOKENS = 4000
 TOKENS_PER_WORK = 80    # {"column", "label", "label_ru", "max", "bonus_column"}: a tab of dates must not cut it
@@ -48,6 +51,12 @@ homework 1A, "КР1" is test 1, "Э1" is exam 1).
 
 Return skip=true when the tab is a summary or statistics tab (Итоги, Статистика), an archive (old),
 or has no graded works.
+
+You also see the names of the sheet's other tabs. A tab that gathers the works of a group or of the course (a
+gradebook) may copy works that have tabs of their own. A column whose work has its own tab is not a graded work
+here: it is counted on its own tab. For example, with a tab "Коллоквиум 1", a column "Коллок" or "Коллоквиум 1" is
+left out; with tabs "Доп. листок 1" and "Доп. листок 2", the columns "Доп 1" and "Доп 2" are left out, while "Доп 3"
+with no tab of its own stays. Columns of such a tab whose works have no tab of their own are graded works as usual.
 
 header_rows: the numbers of the top rows that describe the columns - titles, dates, problem numbers, maximum points -
 in order. Never a row of a student, never statistics that change with the grades (averages, sums or counts over
@@ -106,14 +115,15 @@ def layout_key(sheet_id: str, tab: str, label_budget: int) -> str:
     return f"{PREFIX}{sheet_id}:{digest}:{label_budget}"
 
 
-def prompt(row: Row) -> str:
+def prompt(row: Row, others: list[str] | tuple[str, ...] = ()) -> str:
     def line(cells: dict) -> str:
         return " | ".join(f"{c}={v}" for c, v in cells.items()) or "(empty)"
 
     above = "\n".join(f"row {number}: {line(cells)}" for number, cells in row.above()) or "(no rows above the student)"
     mine = {c: text(v) for c, v in row.cells.items()}
-    return (f'Tab: "{row.tab.title}"\nStudent name is in column {row.name_col}.\n{above}\n'
-            f"student row (row {row.number}): {line(mine)}")
+    tabs = ", ".join(f"«{title}»" for title in others) or "(none)"
+    return (f'Tab: "{row.tab.title}"\nOther tabs of the sheet: {tabs}\nStudent name is in column {row.name_col}.\n'
+            f"{above}\nstudent row (row {row.number}): {line(mine)}")
 
 
 def number(value) -> float | None:
@@ -210,19 +220,22 @@ class Layouts:
     def __init__(self, store: Store, llm: Haiku):
         self.store, self.llm = store, llm
 
-    async def get(self, sheet_id: str, tab: Tab, rows: list[Row], label_budget: int) -> dict:
-        """The cached layout while the rows it watches have the same text, else Haiku's, asked about one of `rows`
-        (the followers' rows in the tab). LLMError or BudgetExceeded when it could not be asked."""
+    async def get(self, sheet_id: str, tab: Tab, rows: list[Row], label_budget: int,
+                  others: list[str] | tuple[str, ...] = ()) -> dict:
+        """The cached layout while the rows it watches have the same text and the other tabs (`others`, their
+        titles) are the same, else Haiku's, asked about one of `rows` (the followers' rows in the tab). LLMError or
+        BudgetExceeded when it could not be asked."""
         key = layout_key(sheet_id, tab.title, label_budget)
         cached = self.store.get_json(key)
-        if cached is not None and tab.header(cached["watch"]) == cached["header"]:
+        if cached is not None and tab.header(cached["watch"]) == cached["header"] \
+                and cached.get("others", []) == sorted(others):
             return cached["spec"]
         row = sample(rows)
         shown = [number for number, _ in row.above()]
         columns = set(row.cells).union(*(cells for _, cells in row.above()))
         system = LAYOUT_SYSTEM.replace("{budget}", str(label_budget))
         try:
-            spec = await self.llm.json("grades", system, prompt(row), LAYOUT_SCHEMA,
+            spec = await self.llm.json("grades", system, prompt(row, others), LAYOUT_SCHEMA,
                                        max_tokens=max(MAX_TOKENS, TOKENS_PER_WORK * len(columns)))
             spec["header_rows"] = sorted({n for n in spec.get("header_rows") or [] if n in shown})
         except BadAnswer as e:  # the same input would fail again: skipped until the top rows change
@@ -230,7 +243,8 @@ class Layouts:
             spec = {"skip": True, "reason": f"no answer: {e}", "header_rows": [], "items": [], "failed": True}
         # The header the model named is what the layout stands on; with none named, the whole top.
         watch = spec["header_rows"] or [number for number, _ in tab.top]
-        self.store.put_json(key, {"watch": watch, "header": tab.header(watch), "spec": spec})
+        self.store.put_json(key, {"watch": watch, "header": tab.header(watch), "others": sorted(others),
+                                  "spec": spec})
         log.info("layout of tab %r: %s", tab.title,
                  "skip" if spec.get("skip") else [it.get("label") for it in spec.get("items") or []])
         return spec

@@ -23,6 +23,7 @@ from .profile import ProfileError
 from .rich import Doc, b, code, i, link
 from .sheets import GOOGLE_SHEET, SheetError
 from .sheets import name as sheet_name
+from .subjects import drop_copies
 
 COMPLAINTS_EVERY = dt.timedelta(days=1)     # one complaint about a sheet's layout a day from a user
 FEEDBACK_PER_DAY = 5                        # /feedback messages a day from a user
@@ -420,6 +421,7 @@ class UserCommands:
                     (tr(lang, "Not read yet.", "Ещё не прочитана.") if s["baseline_at"] is None else "")
                 if problem:
                     problems.append(f"{sheet_name(s)}: {problem}" if unit.subject is not None else problem)
+            items, _ = drop_copies(items)   # «ДЗ 1» of the group's sheet and of the gradebook: once
             found.append((unit, items, problems))
         for tables in ("all", "new", "none"):
             doc = Doc().h(tr(lang, "Your grades", "Твои оценки"))

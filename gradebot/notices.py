@@ -20,6 +20,7 @@ from .llm.budget import Level
 from .poller import SheetRead, UserRead
 from .rich import Doc, b, code
 from .sheets import name as sheet_name
+from .subjects import drop_copies
 
 log = logging.getLogger(__name__)
 
@@ -108,6 +109,14 @@ class ReadNotices:
                         sheet_rows, dropped = collapse(by_sheet[sheet["id"]])
                         self.grades.sent(dropped, 0)  # back where they were: nothing to tell
                         rows += sheet_rows
+                if rows:
+                    # A copy of a grade on another tab or sheet of the unit (the gradebook repeating the group's
+                    # sheet) is told once: the first in this message, or none when the grade is known already.
+                    batch = {(row["sheet"], row["key"]) for row in rows}
+                    known = [item for sheet in unit.sheets for item in self.grades.items(tg_id, sheet["id"])
+                             if (item["sheet"], item["key"]) not in batch]
+                    rows, copies = drop_copies(rows, known)
+                    self.grades.sent([i for row in copies for i in row["ids"]], 0)
                 if rows:
                     sections.append((unit, rows))
             self.with_notes(user, [unit for unit, _ in sections], goal_only=True)
