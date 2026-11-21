@@ -112,3 +112,32 @@ def test_extract_gives_problems_and_the_groups_share():
     assert quiz.parts == () and quiz.graded == pytest.approx(0.5)   # «Коллок» between them is no problem
     rows, _ = workbook.find([tab], "Иванов Иван")
     assert layout.extract(rows[0], spec)[1].graded == pytest.approx(0.5)   # the blank copy is no student
+
+
+STREAM = [[None, None, 10],
+          ["Группа", "Студент", "Балл"],
+          [101, "Петров Пётр", 0],
+          [None, "Сидорова Анна", 0],
+          [None, "Орлов Олег", 0],
+          [None, "Белова Белла", 0],
+          [102, "Козлова Катя", 7],
+          [None, "Иванов Иван", 0],
+          [None, "Зайцев Захар", 9],
+          [None, "Лисина Лиза", 0]]
+
+
+def stream_row(cells: list[list], number: int) -> workbook.Row:
+    tab = workbook.Tab("T", cells, [])
+    return workbook.Row(tab, number, "B", {"C": cells[number - 1][2]})
+
+
+def test_graded_shares_count_the_own_group_of_a_stream():
+    """Another group not graded yet does not make the own group's zero a placeholder."""
+    assert layout.graded_shares(stream_row(STREAM, 8), [2]) == {"C": 2 / 3}
+    assert layout.graded_shares(stream_row(STREAM, 4), [2]) == {"C": 0}  # the own group not graded yet
+
+
+def test_graded_shares_without_a_group_column_count_the_whole_tab():
+    cells = [[None, *row[1:]] for row in STREAM]
+    cells[1][0] = "Действительная группа"  # not the group column
+    assert layout.graded_shares(stream_row(cells, 8), [2]) == {"C": 2 / 7}

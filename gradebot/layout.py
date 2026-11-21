@@ -214,13 +214,34 @@ def problem(header: str) -> str | None:
     return words[-1] if words else None
 
 
+GROUP_HEADERS = {"группа", "group"}  # a column of the students' groups: a stream's sheet is graded group by group
+
+
+def groups(row: Row) -> list[str | None] | None:
+    """Each row's group (by number, from 1) when a column above the row is headed «Группа»: the last group named at
+    or above it (a group's number stands once at its first row, or on every row). None without such a column."""
+    name, cells = index(row.name_col), row.tab.cells
+    j = next((j for r in cells[:row.number - 1] for j, c in enumerate(r)
+              if j != name and isinstance(c, str) and " ".join(c.split()).casefold() in GROUP_HEADERS), None)
+    if j is None:
+        return None
+    out, current = [None], None
+    for r in cells:
+        current = text(r[j]) if j < len(r) and text(r[j]) else current
+        out.append(current)
+    return out
+
+
 def graded_shares(row: Row, header_rows: list[int]) -> dict[str, float]:
     """For each column, the share of the other students of the tab with points above zero in it: a zero is the
     student's own when the work is graded for the group, a placeholder when nobody has points yet. Others are the
-    rows with a person's name in the name column and a number somewhere (a blank copy of the list is none); only
-    the shares are kept."""
+    rows with a person's name in the name column and a number somewhere (a blank copy of the list is none); in a
+    stream's sheet with a group column, those of the student's own group, as another group may be graded later.
+    Only the shares are kept."""
     name = index(row.name_col)
-    others = []
+    group = groups(row)
+    own = group[row.number] if group else None
+    others, same = [], []
     for n, cells in enumerate(row.tab.cells, 1):
         if n == row.number or n in header_rows or name >= len(cells):
             continue
@@ -229,6 +250,9 @@ def graded_shares(row: Row, header_rows: list[int]) -> dict[str, float]:
             continue
         if any(number(c) is not None for j, c in enumerate(cells) if j != name):
             others.append(cells)
+            if own and group[n] == own:
+                same.append(cells)
+    others = same or others
     if not others:
         return {}
     shares = {}
