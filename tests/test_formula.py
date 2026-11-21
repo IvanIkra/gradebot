@@ -200,3 +200,15 @@ def test_a_new_work_joins_the_part_its_label_matches():
     f = Formula(tree, works, graded(h1=6, h2=8, t1=5))
     assert [w.key for w in f.works("ДЗ")] == ["h1", "h2"] and f.value(0) == pytest.approx(0.5 * 7 + 0.5 * 5)
     assert warnings(tree, works) == [("outside", "Лаба", None)]
+
+
+def test_the_longest_prefix_wins():
+    tree = check({"final": total((0.3, part("КР", match=["КР"])), (0.3, part("КР2", match=["кр-2"])),
+                                 (0.4, part("Семинары", match=["ДЗ"])))})
+    works = [{"key": "t1", "label": "Test 1", "label_ru": "КР 1", "max": 10},
+             {"key": "t2", "label": "Test 2", "label_ru": "КР 2", "max": 10},
+             {"key": "h1", "label": "HW Sep 17", "label_ru": "ДЗ 17 сен", "max": 10},
+             {"key": "i1", "label": "IHW 1", "label_ru": "ИДЗ-1", "max": 10}]
+    f = Formula(tree, works, {})
+    assert [[w.key for w in f.works(name)] for name in ("КР", "КР2", "Семинары")] == [["t1"], ["t2"], ["h1"]]
+    assert warnings(tree, works) == [("outside", "ИДЗ-1", None)]

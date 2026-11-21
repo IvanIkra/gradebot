@@ -4,8 +4,9 @@ The tree is JSON: `{"nodes": {name: node}, "final": node}`. Named nodes («На�
 `ref`. A node is one of:
 
 - `{"type": "part", "name", "agg", "k", "count", "works": [{"key", "weight"}], "match": [prefix]}`: works of a
-  kind, 0-10; a work of the plan in no part's `works` joins the first part one of whose `match` its label starts
-  with (a homework added after the formula was laid out). `agg`:
+  kind, 0-10; a work of the plan in no part's `works` joins the part whose `match` its label starts with (a
+  homework added after the formula was laid out): the longest prefix wins, so «КР 2» goes to «КР2», not «КР»;
+  case, spaces, hyphens and dots aside. `agg`:
   `mean`; `best` (the mean of the `k` best); `weighted` (by each work's weight); `points` (by each work's maximum,
   as the sum of points over the sum of maximums). `count`: how many works the part will have when the formula says
   so; the plan may know fewer yet.
@@ -25,6 +26,7 @@ blocking condition («the exam below 4 is the final grade») can even make it go
 """
 
 import math
+import re
 from collections.abc import Callable
 from dataclasses import dataclass, field
 
@@ -147,6 +149,22 @@ class Work:
     max: float = 10.0
 
 
+def bare(label: str) -> str:
+    """A label or a prefix as matched: «КР-1», «кр 1» and «КР.1» are one."""
+    return re.sub(r"[\s\-.]", "", label.casefold())
+
+
+def matching(found: list[dict], labels: list[str]) -> dict | None:
+    """The part whose longest `match` prefix one of the labels starts with; the first such part on a tie."""
+    best, length = None, 0
+    labels = [bare(label) for label in labels]
+    for part in found:
+        for prefix in map(bare, part.get("match") or []):
+            if len(prefix) > length and any(label.startswith(prefix) for label in labels):
+                best, length = part, len(prefix)
+    return best
+
+
 @dataclass
 class Formula:
     """A checked tree with a user's grades: `plan` the subject's works (sheet_works rows), `grades` the user's
@@ -164,9 +182,7 @@ class Formula:
         for work in self.plan:
             if work["key"] in listed:
                 continue
-            labels = [(work.get(name) or "").casefold() for name in ("label_ru", "label")]
-            part = next((p for p in found if any(label.startswith(prefix.casefold()) for prefix in p.get("match") or []
-                                                 if prefix for label in labels)), None)
+            part = matching(found, [work.get(name) or "" for name in ("label_ru", "label")])
             if part is not None:
                 joined.setdefault(part["name"], []).append({"key": work["key"]})
         for part in found:

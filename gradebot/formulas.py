@@ -43,7 +43,8 @@ Nodes (each has an id; children are referred to by id):
 - part: works of one kind (homeworks, tests, the exam). agg: mean (the default), best (the mean of the k best:
   "4 best of 5", "the worst test is dropped" = best with k = count - 1), weighted (each work its own weight, given
   in works[].weight), points (sum of points over the sum of maximums). works: the ids of the works of this part.
-  match: short label prefixes that will catch works of this part added later (for homeworks "ДЗ", "HW"). count:
+  match: short label prefixes that will catch works of this part added later (for homeworks "ДЗ", "HW"); parts
+  of one kind told apart by a number get the number in their prefixes ("КР1" and "КР2", not "КР" for both). count:
   how many works the part will have, only when the text says it. A part with no works yet (an exam not in the
   sheet) has works = [] and still its match.
 - sum: weighted terms; percentages become fractions (30% -> 0.3). A bonus on top of the weights (activity points
@@ -60,8 +61,10 @@ name: the name of the node as the text calls it, short, in the text's language (
 always has a name; another node has one only when the text names it (an accumulated grade), else "". final: the id
 of the node that is the final grade.
 
-Use only what the text says; do not invent weights, rounding or conditions. Every work goes into at most one part;
-works the formula does not use stay out. When the text has no grade formula, found = false and reason says why.
+Use only what the text says; do not invent weights, rounding or conditions. Every work goes into at most one part.
+A part the teacher grades as a whole (seminars, activity) takes the works the text says its grade counts or is made
+of: "the seminar grade counts the current homeworks" puts the homeworks in the seminars part, with their match. Only
+works the formula does not use at all stay out. When the text has no grade formula, found = false and reason says why.
 Fields a node type does not use: empty strings, empty lists, null, 0 or false."""
 
 ID = {"type": "string"}
