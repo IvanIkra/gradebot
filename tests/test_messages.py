@@ -1,6 +1,7 @@
 """Stage 4: grades as rich messages, /grades, /sheets, /status and the buttons inside messages."""
 
 import datetime as dt
+from dataclasses import replace
 
 import pytest
 
@@ -250,3 +251,16 @@ async def test_status(bot, api, followed, store, clock, sheets):
     assert buttons(api.last(OWNER)) == {"Refresh": "st"}
     await bot.handle(callback(OWNER, "st", message_id=42))
     assert api.last(OWNER)["method"] == "editMessageText"
+
+
+async def test_by_problem_sends_the_points_of_each_works_problems(bot, api, followed, clock):
+    news(bot, followed, clock, replace(item("k1", "HW 1", 7, raw=3.5, mx=5), parts=(("1", "1"), ("2a", "0.5"))),
+         item("k2", "Quiz 1", 9, position=1))
+    await bot.handle(message(IVAN, "/grades"))
+    assert buttons(api.last(IVAN))["По задачам"] == f"pt:h{followed}"
+    await bot.handle(callback(IVAN, f"pt:h{followed}"))
+    text = api.last(IVAN)["text"]
+    assert "Матанализ · по задачам" in text and "<b>HW 1</b> 7 — 1: 1 · 2a: 0.5" in text and "Quiz 1" not in text
+    sent = len(api.calls)
+    await bot.handle(callback(IVAN, "pt:h999"))     # not the user's: nothing
+    assert len(api.calls) == sent + 1               # only the callback answer

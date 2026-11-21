@@ -1,7 +1,8 @@
 """Grades as messages: new grades after a poll, and /grades.
 
 A unit (subjects.Unit) is a section: a sheet in no subject headed by its title, linked to the sheet, and its course's
-hashtag; a subject headed by its hashtag, its sheets linked under it. A work is a table row: its
+hashtag; a subject headed by its hashtag, its sheets linked under it. «By problem» sends a unit's works with the
+points of their problems as the sheet has them in the student's row. A work is a table row: its
 label in the user's language (without the course, the heading has it), the grade on 0-10 with the bonus, the sheet's
 own points when its scale is not 0-10, and the grade before for a changed one. Columns empty in the whole section are
 left out.
@@ -156,7 +157,32 @@ def grades_section(unit: Unit, items: list[dict], lang: str, problems: list[str]
             if sheet["id"] in graded:
                 inner.buttons((report if len(graded) == 1 else f"{report}: {sheet_name(sheet)}",
                                f"wr:{sheet['id']}", "link"))
+    if any(item.get("parts") for item in items):
+        inner.buttons((tr(lang, "By problem", "По задачам"), f"pt:{unit_ref(unit)}"))
     if unit.subject is not None:
         sid = unit.subject["id"]
         inner.buttons((tr(lang, "Goal", "Цель"), f"gl:s.{sid}"), (tr(lang, "Formula", "Формула"), f"fm:s.{sid}"))
     return Doc().details(summary, inner, open_=bool(new))
+
+
+def unit_ref(unit: Unit) -> str:
+    """A unit in a callback: «s<subject>», or «h<sheet>» for a sheet in no subject."""
+    return f"s{unit.subject['id']}" if unit.subject is not None else f"h{unit.sheets[0]['id']}"
+
+
+def problems_docs(unit: Unit, items: list[dict], lang: str) -> list[Doc]:
+    """«By problem»: each work with its problems' points, «1: 1 · 2: 0.5 · 3a: 0», as few messages as fit."""
+    title = join(unit.name, tr(lang, " · by problem", " · по задачам"))
+    lines = [join(b(label(item, lang)), " ", score(item["value"]),
+                  f" {item['bonus']:+g}" if item["bonus"] else "", " — ",
+                  " · ".join(f"{name}: {value}" for name, value in item["parts"]))
+             for item in items if item.get("parts")]
+    if not lines:
+        return [Doc().h(title).p(tr(lang, "The sheets show no problems of these works.",
+                                    "В таблицах нет баллов по задачам этих работ."))]
+    docs = [Doc().h(title)]
+    for line in lines:
+        if not Doc(list(docs[-1].blocks)).p(line).fits():
+            docs.append(Doc().h(title))
+        docs[-1].p(line)
+    return docs

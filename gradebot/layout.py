@@ -18,11 +18,12 @@ caller's: the sheet is read again at the next poll.
 import hashlib
 import json
 import logging
+import re
 from dataclasses import dataclass
 
 from .llm.client import BadAnswer, Haiku
 from .store import Store
-from .workbook import Row, Tab, text
+from .workbook import Row, Tab, index, text
 
 log = logging.getLogger(__name__)
 
@@ -154,6 +155,8 @@ class Item:
     bonus: float | None
     position: int
     label_ru: str = ""      # the label in Russian; "" when the layout has none
+    graded: float | None = None     # the share of the other students with points in the column; None: no others
+    parts: tuple[tuple[str, str], ...] = ()  # the work's problems in the own row: (its number, its points)
 
 
 @dataclass(frozen=True)
@@ -193,11 +196,77 @@ def label(item: dict, lang: str) -> str:
     return (item.get("label_ru") or item["label"]) if lang == "ru" else item["label"]
 
 
+# A column of a work's problem, by its header: «1», «3a», «№ 5 b)», «4*», «2 вопрос», «Задача», a penalty.
+PROBLEM = re.compile(r"№?\s*\d{1,2}\s*[a-zа-яё]?\)?\s*\*{0,2}")
+ANSWER = re.compile(r"\d{1,2}\s*вопрос|вопрос\s*\d{1,2}|задача(\s*\d{1,2})?|опрос|.{0,20}штраф")
+NAME = re.compile(r"[^\W\d_][\w.\-]*(?: [^\W\d_][\w.\-]*){1,3}")  # two to four words of letters: a person
+
+
+def problem(header: str) -> str | None:
+    """The short name of a problem's column from its header rows («ДЗ 1 / №3 a)» -> «3a», «7 / 1а» -> «1а»), None
+    for a column that is no problem (a sum, a grade, a copy of another work). A part with № or a letter wins over
+    a bare number: a row of maximums is numbers too."""
+    found = [part for part in (p.strip().casefold() for p in header.split(" / ")) if PROBLEM.fullmatch(part)]
+    if found:
+        best = next((part for part in found if "№" in part or re.search(r"[a-zа-яё]", part)), found[-1])
+        return re.sub(r"[№\s)]", "", best)
+    words = [p.strip() for p in header.split(" / ") if ANSWER.fullmatch(p.strip().casefold())]
+    return words[-1] if words else None
+
+
+def graded_shares(row: Row, header_rows: list[int]) -> dict[str, float]:
+    """For each column, the share of the other students of the tab with points above zero in it: a zero is the
+    student's own when the work is graded for the group, a placeholder when nobody has points yet. Others are the
+    rows with a person's name in the name column and a number somewhere (a blank copy of the list is none); only
+    the shares are kept."""
+    name = index(row.name_col)
+    others = []
+    for n, cells in enumerate(row.tab.cells, 1):
+        if n == row.number or n in header_rows or name >= len(cells):
+            continue
+        who = cells[name]
+        if not isinstance(who, str) or not NAME.fullmatch(" ".join(who.split())):
+            continue
+        if any(number(c) is not None for j, c in enumerate(cells) if j != name):
+            others.append(cells)
+    if not others:
+        return {}
+    shares = {}
+    for col in row.cells:
+        j = index(col)
+        shares[col] = sum((number(r[j]) or 0) > 0 for r in others if j < len(r)) / len(others)
+    return shares
+
+
+def parts_of(row: Row, spec: dict) -> dict[str, tuple[tuple[str, str], ...]]:
+    """Each work's problems: the own row's cells between the work before it (or the name) and its column whose
+    header names a problem, the works' and bonus columns aside."""
+    items = [it for it in spec.get("items") or [] if it.get("column")]
+    own = {it["column"] for it in items} | {it["bonus_column"] for it in items if it.get("bonus_column")}
+    header_rows = spec.get("header_rows") or []
+    out, before = {}, index(row.name_col)
+    for it in sorted(items, key=lambda it: index(it["column"])):
+        at = index(it["column"])
+        found = []
+        for col, value in sorted(row.cells.items(), key=lambda kv: index(kv[0])):
+            if not before < index(col) < at or col in own:
+                continue
+            name = problem(row.tab.column_header(col, header_rows))
+            shown = text(value)
+            if name and shown:
+                raw = number(value)
+                found.append((name, f"{round(raw, 2):g}" if raw is not None else shown[:8]))
+        out[it["column"]] = tuple(found)
+        before = max(before, at)
+    return out
+
+
 def extract(row: Row, spec: dict, start: int = 0) -> list[Item]:
     """The works of a laid-out tab that have a number in the row; positions go on from `start`."""
     if spec.get("skip"):
         return []
     items, keys, header_rows = [], set(), spec.get("header_rows") or []
+    shares, parts = graded_shares(row, header_rows), parts_of(row, spec)
     for it in spec.get("items") or []:
         col = it.get("column")
         raw = number(row.cells.get(col))
@@ -212,7 +281,7 @@ def extract(row: Row, spec: dict, start: int = 0) -> list[Item]:
         keys.add(key)
         items.append(Item(key, row.tab.title, header, " ".join(str(it.get("label") or "").split()),
                           round(value, 2), raw, maximum, bonus or None, start + len(items),
-                          " ".join(str(it.get("label_ru") or "").split())))
+                          " ".join(str(it.get("label_ru") or "").split()), shares.get(col), parts.get(col, ())))
     return items
 
 

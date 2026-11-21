@@ -41,3 +41,13 @@ def test_users_before_ranks_are_trusted(tmp_path):
     store.db.execute("insert into users(tg_id, tg_name, lang, joined_at) values(2, 'Новый', 'ru', 't')")
     assert store.db.execute("select rank from users where tg_id = 2").fetchone()[0] == 0
     store.close()
+
+
+def test_grades_from_before_problems_have_none(tmp_path):
+    path = tmp_path / "old.db"
+    store = Store(path)
+    store.db.execute("alter table grade_items drop column parts")
+    store.close()
+    store = Store(path)
+    assert "parts" in {row["name"] for row in store.db.execute("pragma table_info(grade_items)")}
+    store.close()

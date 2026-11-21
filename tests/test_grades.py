@@ -1,3 +1,4 @@
+from dataclasses import replace
 
 import pytest
 
@@ -124,3 +125,23 @@ def test_a_header_that_changed_keeps_the_grade(grades, two, clock):
                                 item("T|D|ДЗ 2 / 10", "HW 2", 7, position=1, header="ДЗ 2 / 10")], 2)
     assert [(e["key"], e["value"], e["previous"]) for e in grades.waiting(ivan)] == [("T|D|ДЗ 2 / 10", 7, None)]
     assert [i["key"] for i in grades.items(ivan, sheet)] == ["T|C|ДЗ 1 · 19.09", "T|D|ДЗ 2 / 10"]
+
+
+def test_a_zero_is_real_when_the_group_is_graded(grades, two, clock):
+    sheet, ivan, _ = two
+    zero = item("k1", "HW", 0)
+    grades.record(ivan, sheet, [replace(zero, graded=0.0), replace(item("k2", "Quiz", 0), graded=0.4)], 1)
+    assert grades.items(ivan, sheet) == []                  # nobody, or too few, graded yet: placeholders
+    clock.advance(hours=1)
+    grades.record(ivan, sheet, [replace(zero, graded=0.8), replace(item("k2", "Quiz", 0), graded=0.4)], 1)
+    assert [(i["label"], i["value"]) for i in grades.items(ivan, sheet)] == [("HW", 0)]
+    assert [(e["label"], e["value"], e["previous"]) for e in grades.waiting(ivan)] == [("HW", 0, None)]
+
+
+def test_problems_are_kept_and_a_change_of_them_alone_is_no_news(grades, two, clock):
+    sheet, ivan, _ = two
+    grades.record(ivan, sheet, [replace(item("k1", "HW", 8), parts=(("1", "1"), ("2", "0.5")))], 1)
+    assert grades.items(ivan, sheet)[0]["parts"] == [["1", "1"], ["2", "0.5"]]
+    clock.advance(hours=1)
+    grades.record(ivan, sheet, [replace(item("k1", "HW", 8), parts=(("1", "0.5"), ("2", "1")))], 1)
+    assert grades.items(ivan, sheet)[0]["parts"] == [["1", "0.5"], ["2", "1"]] and grades.waiting(ivan) == []

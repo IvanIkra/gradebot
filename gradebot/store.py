@@ -139,6 +139,7 @@ create table if not exists grade_items (    -- the current grade of every work o
     max real not null,              -- out of
     bonus real,
     position integer not null,      -- in sheet order
+    parts text,                     -- the work's problems in the row, JSON [[number, points]]; null: none
     gone integer not null default 0,  -- not in the sheet now (a hidden tab, a cleared cell): back with the same
                                       -- grade, it is no new grade
     primary key (tg_id, sheet, key),
@@ -211,6 +212,7 @@ UPGRADES = (
     ("grade_items", "label_ru", "text"),
     ("grade_events", "label_ru", "text"),
     ("subjects", "tree", "text"),
+    ("grade_items", "parts", "text"),
 )
 FIRST_GROUP = "group"   # the group the shared sheets of a database from before groups go to, with every user
 

@@ -3,7 +3,8 @@
 A grade's key is its place: tab, column and the column's header, not its label, so a new label is no new grade. The
 first read of a sheet for a user is the baseline: it fills grade_items and records nothing. After it, a work new to
 the sheet, or a changed grade or bonus, is a new grade (grade_events), unless it is a placeholder zero (a zero before
-any real grade means "not graded yet"). A grade that leaves the sheet (a tab hidden, the row gone from one tab, a
+any real grade means "not graded yet", unless at least half of the other students have points in the work: then it
+is the student's own). A grade that leaves the sheet (a tab hidden, the row gone from one tab, a
 cell cleared) is kept as gone, so its return with the same grade is no new grade, and with another one it is new with
 the grade before. A column moved by one inserted before it keeps its grade: matched by tab, header and grade among
 the works that left in the same read. So does a column whose header changed (a date or a maximum fixed, a layout
@@ -14,12 +15,14 @@ keys), and a new full name erases all of the user's (`forget`), so the next read
 """
 
 import datetime as dt
+import json
 from collections.abc import Callable
 
 from . import clock
 from .layout import Item
 from .store import Store
 
+GRADED_SHARE = 0.5      # a zero is real once this share of the other students has points in the work
 WINDOW = dt.timedelta(days=7)   # new grades wait this long to be sent, and are marked new this long
 
 
@@ -72,16 +75,20 @@ class Grades:
                         moved.add(old["key"])
                         db.execute("update grade_events set key = ? where tg_id = ? and sheet = ? and key = ?",
                                    (item.key, tg_id, sheet, old["key"]))
-                if item.value == 0 and not item.bonus and old is None:
-                    continue  # a placeholder for "not graded yet"; a zero after a real grade is kept
+                if item.value == 0 and not item.bonus and old is None and \
+                        (item.graded is None or item.graded < GRADED_SHARE):
+                    continue  # a placeholder for "not graded yet": a zero after a real grade, or in a work graded
+                    # for the group, is the student's own
                 seen.add(item.key)
                 db.execute(
                     "insert into grade_items(tg_id, sheet, key, tab, header, label, label_ru, value, raw, max, bonus, "
-                    "position) values(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) on conflict(tg_id, sheet, key) do update set "
-                    "label = excluded.label, label_ru = excluded.label_ru, value = excluded.value, raw = excluded.raw, "
-                    "max = excluded.max, bonus = excluded.bonus, position = excluded.position, gone = 0",
+                    "position, parts) values(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) on conflict(tg_id, sheet, key) do "
+                    "update set label = excluded.label, label_ru = excluded.label_ru, value = excluded.value, "
+                    "raw = excluded.raw, max = excluded.max, bonus = excluded.bonus, position = excluded.position, "
+                    "parts = excluded.parts, gone = 0",
                     (tg_id, sheet, item.key, item.tab, item.header, item.label, item.label_ru or None, item.value,
-                     item.raw, item.max, item.bonus, item.position))
+                     item.raw, item.max, item.bonus, item.position,
+                     json.dumps(item.parts, ensure_ascii=False) if item.parts else None))
                 changed = old is None or old["value"] != item.value or (old["bonus"] or 0) != (item.bonus or 0)
                 if changed and not first:
                     db.execute("insert into grade_events(tg_id, sheet, key, label, label_ru, value, raw, max, bonus, "
@@ -126,7 +133,8 @@ class Grades:
             (tg_id, sheet, self._since()))}
         rows = self.db.execute("select * from grade_items where tg_id = ? and sheet = ? and not gone "
                                "order by position", (tg_id, sheet))
-        return [{**dict(row), "new": row["key"] in fresh} for row in rows]
+        return [{**dict(row), "parts": json.loads(row["parts"]) if row["parts"] else [], "new": row["key"] in fresh}
+                for row in rows]
 
     def waiting(self, tg_id: int | None = None) -> list[dict]:
         """New grades not sent yet, within the window, oldest first; of one user or of everyone."""

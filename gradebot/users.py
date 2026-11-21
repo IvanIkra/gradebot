@@ -1,11 +1,11 @@
 """A user's own commands: grades, the full name, sheets, quiet hours, language and leaving.
 
 Callbacks: `grades` sends /grades, `rf` redraws it in place, `wr:<sheet>` complains about a sheet's layout,
-`ck:<sheet>` reads a sheet now, `us:<sheet>` unfollows it, `cr:<request>` cancels a request for a sheet waiting for
-the owner, `gp:<group>` moves the user to a group (0: none) from /group, `gj:<group>` from the first message,
-`add` asks for a sheet to follow, `qt:<hours|off>` sets quiet hours, `lg:<en|ru>` the language, `stop` and `stop!`
-cancel and confirm /stop; `sj:…` are /subjects' (subjects.py), `fm:…` /formula's (formulas.py), `gl:…`
-/goal's (goals.py).
+`pt:<s subject|h sheet>` sends a unit's points by problem, `ck:<sheet>` reads a sheet now, `us:<sheet>` unfollows
+it, `cr:<request>` cancels a request for a sheet waiting for the owner, `gp:<group>` moves the user to a group (0:
+none) from /group, `gj:<group>` from the first message, `add` asks for a sheet to follow, `qt:<hours|off>` sets
+quiet hours, `lg:<en|ru>` the language, `stop` and `stop!` cancel and confirm /stop; `sj:…` are /subjects'
+(subjects.py), `fm:…` /formula's (formulas.py), `gl:…` /goal's (goals.py).
 """
 
 import datetime as dt
@@ -13,7 +13,7 @@ import datetime as dt
 from . import clock, profile
 from .access import TRUSTED
 from .admins import ADMIN_KINDS
-from .cards import grades_section
+from .cards import grades_section, problems_docs, unit_ref
 from .dialog import Step, asks_hint, link_step
 from .groups import GroupError
 from .i18n import LANGUAGES, tr
@@ -23,7 +23,7 @@ from .profile import ProfileError
 from .rich import Doc, b, code, i, link
 from .sheets import GOOGLE_SHEET, SheetError
 from .sheets import name as sheet_name
-from .subjects import drop_copies
+from .subjects import Unit, drop_copies
 
 COMPLAINTS_EVERY = dt.timedelta(days=1)     # one complaint about a sheet's layout a day from a user
 FEEDBACK_PER_DAY = 5                        # /feedback messages a day from a user
@@ -81,6 +81,13 @@ class UserCommands:
         if kind == "rf":
             await self.api.edit(chat, message_id, self.grades_view(user))
             return tr(lang, "Updated", "Обновлено")
+        if kind == "pt":
+            unit, items = next(((u, it) for u, it, _ in self.unit_grades(user) if unit_ref(u) == arg), (None, []))
+            if unit is None:
+                return None
+            for doc in problems_docs(unit, items, lang):
+                await self.api.send(chat, doc)
+            return None
         if kind == "wr" and arg.isdigit():
             return await self.complain(user, int(arg))
         if kind == "ck" and arg.isdigit():
@@ -412,17 +419,7 @@ class UserCommands:
                            code(tr(lang, "/name Surname Name", "/name Фамилия Имя")))
         if not sheets:
             return Doc().p(self.no_sheets(lang)).buttons(self.add_button(lang))
-        found = []
-        for unit in self.with_notes(user, self.subjects.units(user, sheets)):
-            items, problems = [], []
-            for s in unit.sheets:
-                items += self.grades.items(user["tg_id"], s["id"])
-                problem = self.sheet_problem(s, lang) or \
-                    (tr(lang, "Not read yet.", "Ещё не прочитана.") if s["baseline_at"] is None else "")
-                if problem:
-                    problems.append(f"{sheet_name(s)}: {problem}" if unit.subject is not None else problem)
-            items, _ = drop_copies(items)   # «ДЗ 1» of the group's sheet and of the gradebook: once
-            found.append((unit, items, problems))
+        found = self.unit_grades(user, notes=True)
         for tables in ("all", "new", "none"):
             doc = Doc().h(tr(lang, "Your grades", "Твои оценки"))
             for unit, items, problems in found:
@@ -438,6 +435,22 @@ class UserCommands:
             if doc.fits():
                 break
         return doc
+
+    def unit_grades(self, user: dict, notes: bool = False) -> list[tuple[Unit, list[dict], list[str]]]:
+        """(unit, its grades, what is wrong with its sheets) for every unit of the user's, in /grades order."""
+        lang, found = user["lang"], []
+        units = self.subjects.units(user, self.sheets.followed(user["tg_id"]))
+        for unit in self.with_notes(user, units) if notes else units:
+            items, problems = [], []
+            for s in unit.sheets:
+                items += self.grades.items(user["tg_id"], s["id"])
+                problem = self.sheet_problem(s, lang) or \
+                    (tr(lang, "Not read yet.", "Ещё не прочитана.") if s["baseline_at"] is None else "")
+                if problem:
+                    problems.append(f"{sheet_name(s)}: {problem}" if unit.subject is not None else problem)
+            items, _ = drop_copies(items)   # «ДЗ 1» of the group's sheet and of the gradebook: once
+            found.append((unit, items, problems))
+        return found
 
     async def complain(self, user: dict, sheet_id: int) -> str | None:
         """«Wrong» under a sheet in /grades: the owner hears what is laid out now and may lay it out again."""

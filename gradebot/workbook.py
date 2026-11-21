@@ -60,6 +60,14 @@ def column(index: int) -> str:
     return letters
 
 
+def index(col: str) -> int:
+    """A -> 0, AA -> 26."""
+    n = 0
+    for letter in col:
+        n = n * 26 + ord(letter) - 64
+    return n - 1
+
+
 @dataclass(frozen=True, eq=False)
 class Tab:
     title: str
