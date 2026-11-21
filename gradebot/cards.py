@@ -170,19 +170,34 @@ def unit_ref(unit: Unit) -> str:
     return f"s{unit.subject['id']}" if unit.subject is not None else f"h{unit.sheets[0]['id']}"
 
 
+PROBLEMS_PER_ROW = 8     # problem columns in one table: wider ones scroll sideways on a phone
+
+
+def problems_work(item: dict, lang: str) -> Doc:
+    """A work «By problem»: «HW 1 · grade 7 · 3.5 of 5», then its problems' numbers over their points, in tables
+    of at most PROBLEMS_PER_ROW columns."""
+    facts = [join(tr(lang, "grade ", "оценка "), grade_cell(item))]
+    if item["max"] != 10:
+        facts.append(tr(lang, f"{points(item['raw'])} of {points(item['max'])}",
+                        f"{points(item['raw'])} из {points(item['max'])}"))
+    doc = Doc().p(join(b(label(item, lang)), " · ", join(*facts, sep=" · ")))
+    parts = item["parts"]
+    for at in range(0, len(parts), PROBLEMS_PER_ROW):
+        chunk = parts[at:at + PROBLEMS_PER_ROW]
+        doc.table([name for name, _ in chunk], [[value for _, value in chunk]], [RIGHT] * len(chunk))
+    return doc
+
+
 def problems_docs(unit: Unit, items: list[dict], lang: str) -> list[Doc]:
-    """«By problem»: each work with its problems' points, «1: 1 · 2: 0.5 · 3a: 0», as few messages as fit."""
+    """«By problem»: each work with a table of its problems' points, as few messages as fit."""
     title = join(unit.name, tr(lang, " · by problem", " · по задачам"))
-    lines = [join(b(label(item, lang)), " ", score(item["value"]),
-                  f" {item['bonus']:+g}" if item["bonus"] else "", " — ",
-                  " · ".join(f"{name}: {value}" for name, value in item["parts"]))
-             for item in items if item.get("parts")]
-    if not lines:
+    works = [problems_work(item, lang) for item in items if item.get("parts")]
+    if not works:
         return [Doc().h(title).p(tr(lang, "The sheets show no problems of these works.",
                                     "В таблицах нет баллов по задачам этих работ."))]
     docs = [Doc().h(title)]
-    for line in lines:
-        if not Doc(list(docs[-1].blocks)).p(line).fits():
+    for work in works:
+        if len(docs[-1].blocks) > 1 and not Doc(list(docs[-1].blocks)).extend(work).fits():
             docs.append(Doc().h(title))
-        docs[-1].p(line)
+        docs[-1].extend(work)
     return docs

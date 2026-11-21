@@ -260,7 +260,20 @@ async def test_by_problem_sends_the_points_of_each_works_problems(bot, api, foll
     assert buttons(api.last(IVAN))["По задачам"] == f"pt:h{followed}"
     await bot.handle(callback(IVAN, f"pt:h{followed}"))
     text = api.last(IVAN)["text"]
-    assert "Матанализ · по задачам" in text and "<b>HW 1</b> 7 — 1: 1 · 2a: 0.5" in text and "Quiz 1" not in text
+    assert "Матанализ · по задачам" in text and "Quiz 1" not in text
+    assert "<p><b>HW 1</b> · оценка <b>7</b> · 3.5 из 5</p>" in text
+    assert ('<table bordered striped compact><tr><th align="right">1</th><th align="right">2a</th></tr>'
+            '<tr><td align="right">1</td><td align="right">0.5</td></tr></table>') in text
     sent = len(api.calls)
     await bot.handle(callback(IVAN, "pt:h999"))     # not the user's: nothing
     assert len(api.calls) == sent + 1               # only the callback answer
+
+
+def test_by_problem_splits_many_problems_into_tables_of_eight():
+    from gradebot.cards import problems_work
+    parts = [[str(n), "1"] for n in range(1, 11)]
+    work = problems_work({"label": "HW 2", "value": 9.0, "raw": 9.0, "max": 10.0, "bonus": None, "parts": parts},
+                         "en")
+    assert [kind for kind, *_ in work.blocks] == ["p", "table", "table"]
+    assert work.blocks[1][1] == [str(n) for n in range(1, 9)] and work.blocks[2][1] == ["9", "10"]
+    assert work.plain().startswith("<b>HW 2</b> · grade <b>9</b>\n\n<i>1 · 2 · 3")
