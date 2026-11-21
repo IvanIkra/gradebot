@@ -267,6 +267,11 @@ class SubjectCommands:
         group = self.admin_group(who)
         return kind == "g" and group is not None and group["id"] == int(number)
 
+    def subject_names(self, user: dict) -> str:
+        """The user's subjects and the sheets they follow in none, for a card: «Матан, Дискра» rather than four
+        sheet titles."""
+        return ", ".join(unit.name for unit in self.subjects.units(user, self.sheets.followed(user["tg_id"]))) or "—"
+
     def can_see(self, who: dict | None, scope: str) -> bool:
         return self.can_edit(who, scope) or (who is not None and scope == f"g{who['grp']}" and who["grp"] is not None)
 

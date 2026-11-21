@@ -517,7 +517,6 @@ class OwnerCommands:
         user = next((u for u in self.access.users() if u["tg_id"] == tg_id), None)
         if user is None:
             return self.users_view(lang)
-        sheets = self.sheets.followed(tg_id)
         doc = Doc().h(user["tg_name"]).table([], [
             ["Telegram", self.who(user)],
             [tr(lang, "Full name", "ФИО"), user["student"] or "—"],
@@ -529,7 +528,7 @@ class OwnerCommands:
             [tr(lang, "Joined", "С нами с"), self.when(user["joined_at"], lang)],
             [tr(lang, "Access until", "Доступ до"), self.until(user, lang)],
             [tr(lang, "Code", "Код"), user["note"] or "—"],
-            [tr(lang, "Sheets", "Таблицы"), ", ".join(sheet_name(s) for s in sheets) or "—"],
+            [tr(lang, "Subjects", "Предметы"), self.subject_names(user)],
             *([[tr(lang, "State", "Состояние"), tr(lang, "blocked the bot", "заблокировал(а) бота")]]
               if user["paused"] else [])])
         doc.p(i(tr(lang, "A member's sheet that the bot doesn't read yet waits for your approval; a trusted user's "

@@ -317,7 +317,6 @@ class GroupAdmins:
         member = next((u for u in self.members(group) if u["tg_id"] == tg_id), None)
         if member is None:
             return self.members_view(user, group)
-        sheets = self.sheets.followed(tg_id)
         doc = Doc().h(member["tg_name"]).table([], [
             ["Telegram", self.who(member)],
             [tr(lang, "Full name", "ФИО"), member["student"] or "—"],
@@ -325,7 +324,7 @@ class GroupAdmins:
             [tr(lang, "Joined", "С нами с"), self.when(member["joined_at"], lang)],
             [tr(lang, "Access until", "Доступ до"), self.until(member, lang)],
             [tr(lang, "Code", "Код"), member["note"] or "—"],
-            [tr(lang, "Sheets", "Таблицы"), ", ".join(sheet_name(s) for s in sheets) or "—"],
+            [tr(lang, "Subjects", "Предметы"), self.subject_names(member)],
             *([[tr(lang, "State", "Состояние"), tr(lang, "blocked the bot", "заблокировал(а) бота")]]
               if member["paused"] else [])])
         return doc.buttons((tr(lang, "« Group", "« Группа"), "ml"))

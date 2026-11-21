@@ -129,3 +129,15 @@ async def test_the_owner_runs_a_groups_subjects(bot, api, a1):
     await bot.handle(callback(OWNER, f"sj:d.{subject['id']}"))
     await bot.handle(callback(OWNER, buttons(api.last(OWNER))["Да, удалить"]))
     assert bot.subjects.get(subject["id"]) is None
+
+
+async def test_a_users_card_lists_subjects_not_sheets(bot, api, a1):
+    group, shared = a1
+    calc = bot.subjects.create("Матан", grp=group["id"])
+    bot.subjects.put(calc["id"], shared["Матанализ ДЗ"])
+    bot.subjects.put(calc["id"], shared["Матанализ колок"])
+    await bot.handle(callback(OWNER, f"uc:{BOB}"))
+    await bot.handle(callback(ADA, f"mc:{BOB}"))
+    for chat in (OWNER, ADA):
+        text = api.last(chat)["text"]
+        assert "Матан, Алгебра" in text and "Матанализ ДЗ" not in text
