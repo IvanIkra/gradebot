@@ -226,8 +226,8 @@ func (r *Row) Above() []TopRow {
 	return out
 }
 
-// newTab keeps the cells and the top rows.
-func newTab(title string, cells [][]Value) *Tab {
+// NewTab keeps the cells and the top rows.
+func NewTab(title string, cells [][]Value) *Tab {
 	tab := &Tab{Title: title, Cells: cells}
 	for i, raw := range cells[:min(len(cells), TopRows)] {
 		row := map[string]string{}

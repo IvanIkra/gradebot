@@ -30,7 +30,7 @@ func Load(data []byte) ([]*Tab, error) {
 		if err != nil {
 			return nil, &BrokenWorkbookError{fmt.Sprintf("broken workbook (%v)", err)}
 		}
-		tabs = append(tabs, newTab(sheet.name, cells))
+		tabs = append(tabs, NewTab(sheet.name, cells))
 	}
 	return tabs, nil
 }

@@ -8,20 +8,18 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/IvanIkra/gradebot/internal/books"
 )
 
 const (
-	Ivan = "Иванов Иван"
-	Anna = "Петрова Анна"
+	Ivan = books.Ivan
+	Anna = books.Anna
 )
 
 func load(t *testing.T, name string) []*Tab {
 	t.Helper()
-	data, err := os.ReadFile("testdata/" + name + ".xlsx")
-	if err != nil {
-		t.Fatal(err)
-	}
-	tabs, err := Load(data)
+	tabs, err := Load(books.Book(name))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -197,9 +195,8 @@ func TestNotAWorkbook(t *testing.T) {
 }
 
 func TestATabThatCannotBeParsed(t *testing.T) {
-	data, _ := os.ReadFile("testdata/broken.xlsx")
 	var e *BrokenWorkbookError
-	if _, err := Load(data); !errors.As(err, &e) {
+	if _, err := Load(books.Book("broken")); !errors.As(err, &e) {
 		t.Fatal(err)
 	}
 }

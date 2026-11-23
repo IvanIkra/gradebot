@@ -131,3 +131,37 @@ func Num(f float64) string {
 	}
 	return Repr(f)
 }
+
+// JSONString is a string as Python's json.dumps(ensure_ascii=False) writes it.
+func JSONString(s string) string {
+	var b strings.Builder
+	b.WriteByte('"')
+	for _, r := range s {
+		switch r {
+		case '"':
+			b.WriteString(`\"`)
+		case '\\':
+			b.WriteString(`\\`)
+		case '\n':
+			b.WriteString(`\n`)
+		case '\r':
+			b.WriteString(`\r`)
+		case '\t':
+			b.WriteString(`\t`)
+		case '\b':
+			b.WriteString(`\b`)
+		case '\f':
+			b.WriteString(`\f`)
+		default:
+			if r < 0x20 {
+				b.WriteString(`\u00`)
+				b.WriteString(strconv.FormatInt(int64(r)>>4, 16))
+				b.WriteString(strconv.FormatInt(int64(r)&15, 16))
+			} else {
+				b.WriteRune(r)
+			}
+		}
+	}
+	b.WriteByte('"')
+	return b.String()
+}
