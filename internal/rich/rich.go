@@ -411,3 +411,8 @@ func InlineButton(button Button) map[string]string {
 	}
 	return map[string]string{"text": button.Text, "callback_data": button.Data}
 }
+
+// Clone is a Doc with the same blocks, which grows apart from this one.
+func (d *Doc) Clone() *Doc {
+	return &Doc{blocks: append([]block(nil), d.blocks...)}
+}
