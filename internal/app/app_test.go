@@ -346,3 +346,28 @@ func TestPollHandlesUpdatesAndKeepsTheOffset(t *testing.T) {
 		t.Fatal(offset, w.api.Count("sendRichMessage"))
 	}
 }
+
+func TestReadOnceFindsNothingNewInWhatWasRead(t *testing.T) {
+	w := setup(t)
+	w.two()
+	w.poller.Poll(true) // what the version before read
+	sent := len(w.api.Calls)
+	s := &Service{Store: w.DB, Sheets: w.Sheets, Layouts: layout.New(w.DB, w.llm)}
+	redirect := func(p *poller.Poller) { p.ExportURL, p.TitleURL = w.poller.ExportURL, w.poller.TitleURL }
+	found, relaid, err := s.readOnce(redirect)
+	if err != nil || found != 0 || len(relaid) != 0 || len(w.api.Calls) != sent {
+		t.Fatal(found, relaid, err)
+	}
+}
+
+func TestReadOnceTellsTheNewGradesAndTheTabsLaidOutAgain(t *testing.T) {
+	w := setup(t)
+	w.two()
+	w.poller.Poll(true)
+	w.google.data = books.Book("inserted") // the quizzes' header changed: laid out again
+	s := &Service{Store: w.DB, Sheets: w.Sheets, Layouts: layout.New(w.DB, w.llm)}
+	found, relaid, err := s.readOnce(func(p *poller.Poller) { p.ExportURL, p.TitleURL = w.poller.ExportURL, w.poller.TitleURL })
+	if err != nil || found != 0 || !reflect.DeepEqual(relaid, []string{`Tab: "Квизы"`}) {
+		t.Fatal(found, relaid, err)
+	}
+}

@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime/debug"
+	"strings"
 	"sync"
 	"time"
 
@@ -19,6 +20,7 @@ import (
 	"github.com/IvanIkra/gradebot/internal/backups"
 	"github.com/IvanIkra/gradebot/internal/bot"
 	"github.com/IvanIkra/gradebot/internal/config"
+	"github.com/IvanIkra/gradebot/internal/grades"
 	"github.com/IvanIkra/gradebot/internal/layout"
 	"github.com/IvanIkra/gradebot/internal/llm"
 	"github.com/IvanIkra/gradebot/internal/poller"
@@ -213,4 +215,44 @@ func (s *Service) PollOnce(ctx context.Context, api *telegram.API, b *bot.Bot) {
 			b.Handle(update)
 		})
 	}
+}
+
+// ReadOnce reads every sheet once and sends nothing: the check before a new version takes over a database. It gives
+// how many new grades this read found and how many tabs it had to lay out again: both are 0 when the new version
+// reads the database as the old one did.
+func (s *Service) ReadOnce() (newGrades int, relaid []string, err error) {
+	return s.readOnce(nil)
+}
+
+func (s *Service) readOnce(prepare func(*poller.Poller)) (int, []string, error) {
+	count := func() int {
+		n, _ := store.Scalar[int](s.Store, "select count(*) from grade_events")
+		return n
+	}
+	before := count()
+	asked := &recording{Asker: s.Layouts.LLM}
+	layouts := layout.New(s.Store, asked)
+	p := poller.New(s.Store, s.Sheets, grades.New(s.Store, nil), layouts)
+	p.Lock = &s.Lock
+	if prepare != nil {
+		prepare(p)
+	}
+	for _, read := range p.Poll(true) {
+		if read.Error != "" {
+			slog.Warn("a sheet failed", "sheet", read.Sheet.SheetID, "error", read.Error)
+		}
+	}
+	return count() - before, asked.tabs, s.Store.Close()
+}
+
+// recording is the LLM with the tabs it is asked about written down.
+type recording struct {
+	llm.Asker
+	tabs []string
+}
+
+func (r *recording) JSON(task, system, prompt string, schema map[string]any, maxTokens int) (map[string]any, error) {
+	tab, _, _ := strings.Cut(prompt, "\n")
+	r.tabs = append(r.tabs, tab)
+	return r.Asker.JSON(task, system, prompt, schema, maxTokens)
 }

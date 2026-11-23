@@ -20,6 +20,8 @@ import (
 func main() {
 	data := flag.String("data", "data", "directory for the database")
 	level := flag.String("log-level", "INFO", "DEBUG, INFO, WARN or ERROR")
+	readOnce := flag.Bool("read-once", false, "read every sheet once, send nothing, and tell how many new grades it "+
+		"found and which tabs it laid out again: the check before this version takes over a database")
 	flag.Parse()
 	var lvl slog.Level
 	if err := lvl.UnmarshalText([]byte(strings.ToUpper(*level))); err != nil {
@@ -36,6 +38,17 @@ func main() {
 	service, err := app.New(env, *data)
 	if err != nil {
 		fail(err)
+	}
+	if *readOnce {
+		found, relaid, err := service.ReadOnce()
+		if err != nil {
+			fail(err)
+		}
+		fmt.Printf("new grades found: %d; tabs laid out again: %d\n", found, len(relaid))
+		for _, tab := range relaid {
+			fmt.Println("  " + tab)
+		}
+		return
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
