@@ -146,3 +146,5 @@ const (
 	calc = "https://docs.google.com/spreadsheets/d/1CalcExampleSheetId_0123456789abc/edit#gid=0"
 	alg  = "https://docs.google.com/spreadsheets/u/1/d/1AlgebraExampleSheetId-0123456789/edit"
 )
+
+func fakeButtons(m fake.Sent) map[string]string { return fake.Buttons(m) }
