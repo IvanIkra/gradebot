@@ -370,10 +370,29 @@ func (s *Store) Tx(fn func()) {
 	done = true
 }
 
+// TxErr runs fn in one transaction, rolled back when fn gives an error.
+func (s *Store) TxErr(fn func() error) error {
+	var failed error
+	err := s.TryTx(func() {
+		if failed = fn(); failed != nil {
+			panic(rollback{})
+		}
+	})
+	if failed != nil {
+		return failed
+	}
+	return err
+}
+
+type rollback struct{}
+
 // TryTx is Tx that gives back the panic of fn as an error, rolled back; a constraint failure is the usual one.
 func (s *Store) TryTx(fn func()) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
+			if _, ok := r.(rollback); ok {
+				return
+			}
 			if e, ok := r.(error); ok {
 				err = e
 				return
@@ -425,7 +444,7 @@ func IsConstraint(err error) bool {
 }
 
 // Select reads rows into structs: a column goes to the field tagged `db:"name"`, or named the same ignoring case
-// and underscores. Columns with no field are skipped.
+// and underscores. Columns with no field are skipped; NULL is the zero value, or a nil pointer.
 func Select[T any](s *Store, query string, args ...any) []T {
 	rows, err := s.q().Query(query, args...)
 	if err != nil {
@@ -434,20 +453,25 @@ func Select[T any](s *Store, query string, args ...any) []T {
 	defer rows.Close()
 	names, _ := rows.Columns()
 	var out []T
-	var skip any
+	values := make([]any, len(names))
+	targets := make([]any, len(names))
+	for n := range values {
+		targets[n] = &values[n]
+	}
 	for rows.Next() {
-		var item T
-		v := reflect.ValueOf(&item).Elem()
-		targets := make([]any, len(names))
-		for n, name := range names {
-			if field, ok := fieldOf(v, name); ok {
-				targets[n] = field.Addr().Interface()
-			} else {
-				targets[n] = &skip
-			}
-		}
 		if err := rows.Scan(targets...); err != nil {
 			panic(fmt.Errorf("%w\n%s", err, query))
+		}
+		var item T
+		v := reflect.ValueOf(&item).Elem()
+		if v.Kind() != reflect.Struct {
+			assign(v, values[0])
+		} else {
+			for n, name := range names {
+				if field, ok := fieldOf(v, name); ok {
+					assign(field, values[n])
+				}
+			}
 		}
 		out = append(out, item)
 	}
@@ -457,11 +481,67 @@ func Select[T any](s *Store, query string, args ...any) []T {
 	return out
 }
 
+// assign puts a value SQLite gave into a Go value of a kind that holds it.
+func assign(field reflect.Value, src any) {
+	if src == nil {
+		field.SetZero()
+		return
+	}
+	if field.Kind() == reflect.Pointer {
+		ptr := reflect.New(field.Type().Elem())
+		assign(ptr.Elem(), src)
+		field.Set(ptr)
+		return
+	}
+	if field.Kind() == reflect.Interface {
+		field.Set(reflect.ValueOf(src))
+		return
+	}
+	switch v := src.(type) {
+	case int64:
+		switch field.Kind() {
+		case reflect.Int, reflect.Int64, reflect.Int32:
+			field.SetInt(v)
+		case reflect.Float64:
+			field.SetFloat(float64(v))
+		case reflect.Bool:
+			field.SetBool(v != 0)
+		case reflect.String:
+			field.SetString(fmt.Sprint(v))
+		default:
+			panic(fmt.Sprintf("cannot put an integer into %s", field.Type()))
+		}
+	case float64:
+		switch field.Kind() {
+		case reflect.Float64:
+			field.SetFloat(v)
+		case reflect.Int, reflect.Int64:
+			field.SetInt(int64(v))
+		default:
+			panic(fmt.Sprintf("cannot put a real into %s", field.Type()))
+		}
+	case string:
+		field.SetString(v)
+	case []byte:
+		field.SetString(string(v))
+	case bool:
+		field.SetBool(v)
+	default:
+		panic(fmt.Sprintf("cannot put %T into %s", src, field.Type()))
+	}
+}
+
 func fieldOf(v reflect.Value, column string) (reflect.Value, bool) {
 	t := v.Type()
 	want := strings.ReplaceAll(strings.ToLower(column), "_", "")
 	for n := 0; n < t.NumField(); n++ {
 		f := t.Field(n)
+		if f.Anonymous && f.Type.Kind() == reflect.Struct {
+			if inner, ok := fieldOf(v.Field(n), column); ok {
+				return inner, true
+			}
+			continue
+		}
 		if tag := f.Tag.Get("db"); tag == column || (tag == "" && strings.ToLower(f.Name) == want) {
 			return v.Field(n), true
 		}
@@ -481,39 +561,12 @@ func Get[T any](s *Store, query string, args ...any) (T, bool) {
 
 // Column reads the first column of every row.
 func Column[T any](s *Store, query string, args ...any) []T {
-	rows, err := s.q().Query(query, args...)
-	if err != nil {
-		panic(fmt.Errorf("%w\n%s", err, query))
-	}
-	defer rows.Close()
-	names, _ := rows.Columns()
-	var out []T
-	for rows.Next() {
-		var value T
-		targets := make([]any, len(names))
-		targets[0] = &value
-		for n := 1; n < len(names); n++ {
-			targets[n] = new(any)
-		}
-		if err := rows.Scan(targets...); err != nil {
-			panic(fmt.Errorf("%w\n%s", err, query))
-		}
-		out = append(out, value)
-	}
-	if err := rows.Err(); err != nil {
-		panic(err)
-	}
-	return out
+	return Select[T](s, query, args...)
 }
 
 // Scalar reads the first column of the first row; false when there is no row.
 func Scalar[T any](s *Store, query string, args ...any) (T, bool) {
-	values := Column[T](s, query, args...)
-	if len(values) == 0 {
-		var zero T
-		return zero, false
-	}
-	return values[0], true
+	return Get[T](s, query, args...)
 }
 
 // Has tells whether the query gives a row.
@@ -566,6 +619,22 @@ func Marshal(value any) []byte {
 		panic(err)
 	}
 	return bytes.TrimRight(buf.Bytes(), "\n")
+}
+
+// Null is NULL for an empty string: what None was.
+func Null(text string) any {
+	if text == "" {
+		return nil
+	}
+	return text
+}
+
+// NullID is NULL for a zero id.
+func NullID(id int64) any {
+	if id == 0 {
+		return nil
+	}
+	return id
 }
 
 // Bool is SQLite's 0 and 1.

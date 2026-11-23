@@ -68,3 +68,15 @@ func DayStart(moment time.Time, zone *time.Location) time.Time {
 	local := moment.In(zone)
 	return time.Date(local.Year(), local.Month(), local.Day(), 0, 0, 0, 0, zone).UTC()
 }
+
+// Fake is a clock that moves only when told: tests start it at 2026-11-09 12:00 UTC.
+type Fake struct{ Moment time.Time }
+
+// NewFake is a fake clock at 2026-11-09 12:00 UTC.
+func NewFake() *Fake { return &Fake{Moment: time.Date(2026, 11, 9, 12, 0, 0, 0, time.UTC)} }
+
+// Now is the fake moment.
+func (f *Fake) Now() time.Time { return f.Moment }
+
+// Advance moves the clock on.
+func (f *Fake) Advance(d time.Duration) { f.Moment = f.Moment.Add(d) }
