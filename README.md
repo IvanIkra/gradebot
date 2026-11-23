@@ -92,12 +92,12 @@ in a new message, so the news stays readable.
 
 ## Running
 
-You need [uv](https://docs.astral.sh/uv/) and a bot token from [@BotFather](https://t.me/BotFather).
+You need [Go](https://go.dev/dl/) (the version in `go.mod`) and a bot token from
+[@BotFather](https://t.me/BotFather).
 
 ```sh
 cp .env.example .env    # fill in BOT_TOKEN, OWNER_ID and ANTHROPIC_API_KEY
-uv sync
-.venv/bin/python -m gradebot --data data
+go run ./cmd/gradebot --data data
 ```
 
 With Docker:
@@ -111,6 +111,16 @@ docker compose logs -f
 The SQLite database lives in `data/`. The bot copies it once a day after 04:00 local time to
 `data/backups/gradebot-<date>.db` and keeps the last 14; copy that folder off the server now and then. To restore,
 stop the bot, put a copy in place of `data/gradebot.db` and start it again.
+
+Before a new version takes over a database, it can read every sheet once without sending anything:
+
+```sh
+docker compose run --rm gradebot --data data --read-once
+```
+
+It tells how many new grades it found and which tabs it had to lay out again with Haiku. Both are 0 when the new
+version reads the database as the one before did. Run it on a copy of `data/` if in doubt: the grades it finds are
+kept and would be sent at the next start.
 
 ## Privacy
 
@@ -129,10 +139,14 @@ who also sees every full name users set.
 ## Development
 
 ```sh
-uv sync
-uv run pytest -q
-uv run ruff check .
+go test ./...
+go vet ./...
+gofmt -l .              # lists the files to format; empty when all are
 ```
+
+The code is in `internal/`, one package per part: `store` (SQLite), `telegram` (a thin Bot API client), `rich`
+(messages), `workbook` (xlsx), `layout` (Haiku's layout of a tab), `grades`, `poller`, `formula`, `llm` and `bot`
+(everything the bot answers). Tests use a fake Bot API, a fake Haiku and made-up sheets (`internal/books`).
 
 ## License
 

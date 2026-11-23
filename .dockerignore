@@ -1,8 +1,9 @@
-# Only what the image needs: the build context never carries .env, data/ or the local environment.
+# Only what the image needs: the build context never carries .env, data/ or local files.
 *
-!pyproject.toml
-!uv.lock
-!.python-version
-!gradebot
-**/__pycache__
+!go.mod
+!go.sum
+!cmd
+!internal
+**/*_test.go
+**/testdata
 .DS_Store

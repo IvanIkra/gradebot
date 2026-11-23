@@ -1,9 +1,5 @@
-__pycache__/
-*.pyc
-.venv/
-*.egg-info/
-.pytest_cache/
-.ruff_cache/
+# The binary of `go build ./cmd/gradebot`
+/gradebot
 .DS_Store
 
 # Secrets
