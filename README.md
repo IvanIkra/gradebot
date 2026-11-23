@@ -104,6 +104,7 @@ With Docker:
 
 ```sh
 mkdir -p data           # before the first start, or Docker creates it owned by root
+echo "APP_UID=$(id -u)" >> .env && echo "APP_GID=$(id -g)" >> .env   # the bot runs as the owner of data/
 docker compose up -d --build
 docker compose logs -f
 ```

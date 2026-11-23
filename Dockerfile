@@ -7,8 +7,8 @@ COPY cmd cmd
 COPY internal internal
 RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /gradebot ./cmd/gradebot
 
-# Run: CA certificates and the binary. As root, like the image before it, so the data/ it wrote stays writable.
-FROM gcr.io/distroless/static-debian12
+# Run: CA certificates and the binary, as a user without rights (compose sets the owner of data/ instead).
+FROM gcr.io/distroless/static-debian12:nonroot
 COPY --from=build /gradebot /gradebot
 WORKDIR /app
 # Long polling only: no port to expose.

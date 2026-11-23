@@ -1,6 +1,7 @@
 # docker compose up -d --build
 # The bot only polls the Bot API, so no port is published. DNS is set explicitly for hosts whose routing
-# breaks the default container DNS.
+# breaks the default container DNS. The bot runs as APP_UID:APP_GID (the owner of data/ on the host), with a
+# read-only root and no capabilities: it only writes data/.
 services:
   gradebot:
     build: .
@@ -11,6 +12,14 @@ services:
       - ${CONTAINER_DNS_1:-1.1.1.1}
       - ${CONTAINER_DNS_2:-9.9.9.9}
     env_file: .env
+    user: "${APP_UID:-65532}:${APP_GID:-65532}"
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
     volumes:
       - ./data:/app/data
     mem_limit: 256m
