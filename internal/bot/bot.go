@@ -23,7 +23,6 @@ import (
 	"github.com/IvanIkra/gradebot/internal/groups"
 	"github.com/IvanIkra/gradebot/internal/i18n"
 	"github.com/IvanIkra/gradebot/internal/llm"
-	"github.com/IvanIkra/gradebot/internal/poller"
 	"github.com/IvanIkra/gradebot/internal/pyfmt"
 	"github.com/IvanIkra/gradebot/internal/rich"
 	"github.com/IvanIkra/gradebot/internal/sheets"
@@ -55,7 +54,7 @@ type Bot struct {
 	Zone     *time.Location
 	Username string
 	Now      clock.Now
-	Poller   *poller.Poller // set by the service; without it nothing is read
+	Poller   Reader         // set by the service; without it nothing is read
 	Budget   *llm.Budget    // set by the service: the owner's /status shows the spending
 	Journal  *llm.Journal
 	LLM      llm.Asker // Haiku, set by the service: /formula reads formulas with it
@@ -63,6 +62,13 @@ type Bot struct {
 	Asks     map[int64]*Ask
 	Drafts   map[int64]*Draft
 	feedback map[int64][]time.Time
+}
+
+// Reader is what the bot asks of the poller.
+type Reader interface {
+	Request(sheet, tgID int64)
+	Relayout(sheet sheets.Sheet)
+	Rescheduled()
 }
 
 // New makes the bot.

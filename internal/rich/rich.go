@@ -13,10 +13,14 @@ import (
 )
 
 const (
-	MaxChars   = 32768 // of a rich message (the HTML is counted, which is more than its text)
-	MaxBlocks  = 500   // nested blocks, table rows and details count
 	MaxColumns = 20
 	RowButtons = 8
+)
+
+// The limits of a rich message; tests lower them.
+var (
+	MaxChars  = 32768 // of a rich message (the HTML is counted, which is more than its text)
+	MaxBlocks = 500   // nested blocks, table rows and details count
 )
 
 // Styles a button may have.
