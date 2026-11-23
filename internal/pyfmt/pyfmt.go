@@ -165,3 +165,12 @@ func JSONString(s string) string {
 	b.WriteByte('"')
 	return b.String()
 }
+
+// JSONPairs is a list of string pairs as Python's json.dumps(ensure_ascii=False) writes it: [["1", "0.5"]].
+func JSONPairs(pairs [][2]string) string {
+	parts := make([]string, len(pairs))
+	for n, p := range pairs {
+		parts[n] = "[" + JSONString(p[0]) + ", " + JSONString(p[1]) + "]"
+	}
+	return "[" + strings.Join(parts, ", ") + "]"
+}
