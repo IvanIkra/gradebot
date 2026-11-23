@@ -152,7 +152,7 @@ func TestUsersComeInPagesAndCanBeSearched(t *testing.T) {
 	if _, ok := f.buttons(owner)["3 / 3"]; !ok {
 		t.Fatal(f.buttons(owner))
 	}
-	f.say(owner, "/users номер1") // the full name, any case
+	f.say(owner, "/users номер1")                             // the full name, any case
 	contains(t, f.text(owner), "Пользователи · 6 · «номер1»") // 1, 11, 13, 15, 17, 19
 	f.press(owner, f.buttons(owner)["Человек11"])
 	contains(t, f.text(owner), "Студент Номер11")

@@ -585,10 +585,14 @@ func (b *Bot) inviteSteps(lang string, admin *access.User) []Step {
 				}
 				return "admin", nil
 			},
-			Error:   func(lang string, _ error) string { return tr(lang, "A button, please.", "Выбери кнопкой.") },
-			Choices: func(Data) []Choice { return []Choice{{tr(lang, "The group's admin", "Админ группы"), "admin"}} },
-			Skip:    func(Data) string { return tr(lang, "Members", "Участники") },
-			When:    func(data Data) bool { return data["group"] != "" }},
+			Error: func(lang string, _ error) string {
+				return tr(lang, "A button, please.", "Выбери кнопкой.")
+			},
+			Choices: func(Data) []Choice {
+				return []Choice{{tr(lang, "The group's admin", "Админ группы"), "admin"}}
+			},
+			Skip: func(Data) string { return tr(lang, "Members", "Участники") },
+			When: func(data Data) bool { return data["group"] != "" }},
 		{Name: "people", Prompt: plain(tr(lang, "How many people may come in with the code? ",
 			"Сколько человек может войти по коду? ") + people),
 			Check: token("uses", func(v string) string {
@@ -749,7 +753,9 @@ func (b *Bot) groupStep(lang, skip string, isNew bool) Step {
 			}
 			return itoa(group.ID), nil
 		},
-		Error: func(lang string, _ error) string { return tr(lang, "No such group.", "Такой группы нет.") },
+		Error: func(lang string, _ error) string {
+			return tr(lang, "No such group.", "Такой группы нет.")
+		},
 		Choices: func(Data) []Choice {
 			var out []Choice
 			for _, g := range b.Groups.All() {
@@ -783,7 +789,9 @@ func (b *Bot) sheetStep(lang string) Step {
 			}
 			return s.URL, nil
 		},
-		Error: func(lang string, _ error) string { return tr(lang, "The bot reads no such sheet.", "Бот не читает такую таблицу.") },
+		Error: func(lang string, _ error) string {
+			return tr(lang, "The bot reads no such sheet.", "Бот не читает такую таблицу.")
+		},
 		Choices: func(Data) []Choice {
 			var out []Choice
 			every := b.Sheets.Every()

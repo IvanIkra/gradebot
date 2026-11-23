@@ -54,8 +54,8 @@ type Bot struct {
 	Zone     *time.Location
 	Username string
 	Now      clock.Now
-	Poller   Reader         // set by the service; without it nothing is read
-	Budget   *llm.Budget    // set by the service: the owner's /status shows the spending
+	Poller   Reader      // set by the service; without it nothing is read
+	Budget   *llm.Budget // set by the service: the owner's /status shows the spending
 	Journal  *llm.Journal
 	LLM      llm.Asker // Haiku, set by the service: /formula reads formulas with it
 

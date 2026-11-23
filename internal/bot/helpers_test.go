@@ -33,7 +33,7 @@ func setup(t *testing.T) *fixture {
 
 type msgOpt func(*telegram.Message)
 
-func lang(code string) msgOpt { return func(m *telegram.Message) { m.From.LanguageCode = code } }
+func lang(code string) msgOpt  { return func(m *telegram.Message) { m.From.LanguageCode = code } }
 func first(name string) msgOpt { return func(m *telegram.Message) { m.From.FirstName = name } }
 func noUsername() msgOpt       { return func(m *telegram.Message) { m.From.Username = "" } }
 func chatType(kind string) msgOpt {

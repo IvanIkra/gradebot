@@ -244,7 +244,9 @@ func newsSection(unit *Unit, rows []*Row, lang string) *rich.Doc {
 	return doc
 }
 
-func allGradesButton(lang string) rich.Button { return rich.B(tr(lang, "All grades", "Все оценки"), "grades") }
+func allGradesButton(lang string) rich.Button {
+	return rich.B(tr(lang, "All grades", "Все оценки"), "grades")
+}
 
 // Section is a unit with its new rows.
 type Section struct {

@@ -263,7 +263,7 @@ func TestANewIntervalAppliesAtOnceAndRequestsKeepTheSchedule(t *testing.T) {
 	if got := snapshot(); !reflect.DeepEqual(got, []bool{true, false}) {
 		t.Fatal(got)
 	}
-	f.poller.Lock.Lock() // as the bot holds it
+	f.poller.Lock.Lock()            // as the bot holds it
 	poller.SetInterval(f.env.DB, 5) // 0.1 s
 	f.poller.Lock.Unlock()
 	f.poller.Rescheduled()

@@ -333,12 +333,12 @@ func (b *book) cells(name string) ([][]Value, error) {
 			}
 		case "c":
 			var c struct {
-				R string    `xml:"r,attr"`
-				T string    `xml:"t,attr"`
-				S string    `xml:"s,attr"`
-				V *string   `xml:"v"`
-				F *struct{} `xml:"f"`
-				Is richText `xml:"is"`
+				R  string    `xml:"r,attr"`
+				T  string    `xml:"t,attr"`
+				S  string    `xml:"s,attr"`
+				V  *string   `xml:"v"`
+				F  *struct{} `xml:"f"`
+				Is richText  `xml:"is"`
 			}
 			if err := dec.DecodeElement(&c, &start); err != nil {
 				return nil, err

@@ -26,8 +26,8 @@ func gradeItem(key, label string, value float64, opts ...func(*layout.Item)) lay
 	return it
 }
 
-func raw(r, mx float64) func(*layout.Item)   { return func(i *layout.Item) { i.Raw, i.Max = r, mx } }
-func pos(n int) func(*layout.Item)           { return func(i *layout.Item) { i.Position = n } }
+func raw(r, mx float64) func(*layout.Item)    { return func(i *layout.Item) { i.Raw, i.Max = r, mx } }
+func pos(n int) func(*layout.Item)            { return func(i *layout.Item) { i.Position = n } }
 func parts(p ...[2]string) func(*layout.Item) { return func(i *layout.Item) { i.Parts = p } }
 
 // withFollowed: Ivan follows a sheet titled «Матанализ», read once (the baseline).
@@ -320,7 +320,9 @@ type fakePoller struct {
 	requested [][2]int64
 }
 
-func (p *fakePoller) Request(sheet, tgID int64)   { p.requested = append(p.requested, [2]int64{sheet, tgID}) }
+func (p *fakePoller) Request(sheet, tgID int64) {
+	p.requested = append(p.requested, [2]int64{sheet, tgID})
+}
 func (p *fakePoller) Relayout(sheet sheets.Sheet) { p.relaid = append(p.relaid, sheet.ID) }
 func (p *fakePoller) Rescheduled()                {}
 
@@ -425,7 +427,7 @@ func TestByProblemSendsThePointsOfEachWorksProblems(t *testing.T) {
 			`<tr><td align="right">1</td><td align="right">0.5</td></tr></table>`)
 	lacks(t, text, "Quiz 1")
 	count := len(f.api.Calls)
-	f.press(ivan, "pt:h999") // not the user's: nothing
+	f.press(ivan, "pt:h999")         // not the user's: nothing
 	if len(f.api.Calls) != count+1 { // only the callback answer
 		t.Fatal(f.api.Calls[count:])
 	}

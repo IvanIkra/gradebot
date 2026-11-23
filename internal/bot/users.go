@@ -706,7 +706,9 @@ func (b *Bot) cmdQuiet(chat int64, user access.User, arg string) {
 			_, err := profile.Quiet(value)
 			return value, err
 		},
-		Error: func(lang string, _ error) string { return tr(lang, "Hours like 23-8, or off.", "Часы вида 23-8 или off.") }}
+		Error: func(lang string, _ error) string {
+			return tr(lang, "Hours like 23-8, or off.", "Часы вида 23-8 или off.")
+		}}
 	var data Data
 	if arg != "" {
 		data = Data{"hours": arg}

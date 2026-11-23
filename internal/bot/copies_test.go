@@ -27,8 +27,8 @@ func keysOf(rows []*Row) []string {
 
 func TestCopiesAreTheSameLabelAndGradeElsewhere(t *testing.T) {
 	items := []*Row{copyRow(1, "ДЗ|B|1", "ДЗ 1", 9, false), copyRow(1, "ДЗ|C|2", "ДЗ 2", 8, false),
-		copyRow(2, "262|D|x", "дз1", 9, true), // the gradebook's copy: spaces and case aside
-		copyRow(2, "262|E|y", "ДЗ 2", 7, false), // another grade: both are shown
+		copyRow(2, "262|D|x", "дз1", 9, true),                                          // the gradebook's copy: spaces and case aside
+		copyRow(2, "262|E|y", "ДЗ 2", 7, false),                                        // another grade: both are shown
 		copyRow(1, "ДЗ|F|z", "ДЗ 3", 5, false), copyRow(1, "ДЗ|G|w", "ДЗ 3", 5, false)} // one tab: not copies
 	kept, copies := dropCopies(items, nil)
 	if !reflect.DeepEqual(keysOf(copies), []string{"262|D|x"}) || !kept[0].New { // the copy's «new» passes on

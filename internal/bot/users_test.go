@@ -264,4 +264,3 @@ func TestTimeZoneNamedWithTimes(t *testing.T) {
 		t.Fatal(got)
 	}
 }
-

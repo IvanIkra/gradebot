@@ -31,14 +31,14 @@ type Choice struct{ Text, Value string }
 
 // Step is a question of a flow.
 type Step struct {
-	Name    string                                   // the key of the answer in the flow's data
-	Prompt  func(Data) *rich.Doc                     // the question, given the answers so far
-	Check   func(value string, data Data) (string, error) // the answer as kept; an error asks again
-	Error   func(lang string, err error) string      // why an answer was wrong, in the language
-	Choices func(Data) []Choice                      // buttons
-	Skip    func(Data) string                        // the text of the button that leaves it empty; "" for none
-	When    func(Data) bool                          // asked only when this holds
-	NoCancel bool                                    // a view that takes a typed answer too
+	Name     string                                        // the key of the answer in the flow's data
+	Prompt   func(Data) *rich.Doc                          // the question, given the answers so far
+	Check    func(value string, data Data) (string, error) // the answer as kept; an error asks again
+	Error    func(lang string, err error) string           // why an answer was wrong, in the language
+	Choices  func(Data) []Choice                           // buttons
+	Skip     func(Data) string                             // the text of the button that leaves it empty; "" for none
+	When     func(Data) bool                               // asked only when this holds
+	NoCancel bool                                          // a view that takes a typed answer too
 }
 
 // Ask is the question the bot waits an answer to in a chat.
