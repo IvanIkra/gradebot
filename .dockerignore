@@ -1,9 +1,3 @@
-# Only what the image needs: the build context never carries .env, data/ or local files.
+# Only the binary: the build context never carries .env, data/ or the sources.
 *
-!go.mod
-!go.sum
-!cmd
-!internal
-**/*_test.go
-**/testdata
-.DS_Store
+!bin/gradebot

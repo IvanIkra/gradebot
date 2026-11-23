@@ -1,4 +1,5 @@
-# The binary of `go build ./cmd/gradebot`
+# The binary the image is built from
+/bin/
 /gradebot
 .DS_Store
 

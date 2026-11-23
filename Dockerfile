@@ -1,15 +1,8 @@
-# Build: one static binary, no cgo (the SQLite driver is pure Go).
-FROM golang:1.26 AS build
-WORKDIR /src
-COPY go.mod go.sum ./
-RUN go mod download
-COPY cmd cmd
-COPY internal internal
-RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /gradebot ./cmd/gradebot
-
-# Run: CA certificates and the binary, as a user without rights (compose sets the owner of data/ instead).
+# The image holds a binary built elsewhere, so the host compiles nothing:
+#   CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o bin/gradebot ./cmd/gradebot
+# CA certificates come with distroless; the bot runs as the user compose sets (the owner of data/).
 FROM gcr.io/distroless/static-debian12:nonroot
-COPY --from=build /gradebot /gradebot
+COPY bin/gradebot /gradebot
 WORKDIR /app
 # Long polling only: no port to expose.
 ENTRYPOINT ["/gradebot"]

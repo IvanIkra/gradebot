@@ -105,7 +105,14 @@ With Docker:
 ```sh
 mkdir -p data           # before the first start, or Docker creates it owned by root
 echo "APP_UID=$(id -u)" >> .env && echo "APP_GID=$(id -g)" >> .env   # the bot runs as the owner of data/
+CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o bin/gradebot ./cmd/gradebot
 docker compose up -d --build
+```
+
+The image only copies `bin/gradebot`, so it is built where Go is: on a small server, build the binary on another
+machine and copy it over, rather than compile there.
+
+```sh
 docker compose logs -f
 ```
 
